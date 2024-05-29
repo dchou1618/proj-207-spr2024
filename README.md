@@ -8,4 +8,5 @@
 ## Plan
 
 (1) Estimate univariate time series of the two datasets and run arima.sim for simulations.
+
 (2) Benchmark CoST against some traditional time series models and some other deep learning frameworks for univariate data.
