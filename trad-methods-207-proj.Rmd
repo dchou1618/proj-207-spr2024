@@ -1,0 +1,32 @@
+---
+title: "Traditional Methods 207 Final Project"
+author: "Dylan Chou"
+date: "2024-05-30"
+output: pdf_document
+---
+
+```{r, include=F}
+library(astsa)
+```
+
+```{r}
+par(mfrow=c(2,1))
+etth1 = read.csv("./data/ETTh1.csv")
+weather = read.csv("./data/WTH.csv")
+# univariate time series
+# https://stackoverflow.com/questions/33782218/how-to-create-a-time-series-of-hourly-data
+first_hour_etth1 = 24*(as.Date("2016-07-01 00:00:00")-as.Date("2016-1-1 00:00:00"))
+etth1.ts = ts(data=etth1$OT, start=c(2016, first_hour_etth1), freq=24*365)
+weather.ts = ts(data=weather$WetBulbCelsius, start=c(2010, 0), freq=24*365)
+plot(etth1.ts, main="ETTH1 Electricity Oil Temperature")
+plot(weather.ts, main="Weather Wet Bulb Temperature (Celsius)")
+```
+
+```{r}
+pacf(etth1.ts)
+acf(etth1.ts)
+acf(diff(etth1.ts))
+```
+
+
+
