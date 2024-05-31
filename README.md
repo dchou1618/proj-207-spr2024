@@ -9,8 +9,8 @@
 
 ## Plan
 
-(1) Estimate univariate time series of the two datasets and run arima.sim for simulated predictions.
+(1) Estimate univariate time series of the two datasets using traditional methods, such as arima, sarima, or possibly farima given the oil temperature data appears to exhibit long-range dependence, and run arima.sim for simulated predictions.
 
-(2) Benchmark CoST against some traditional time series models and some other deep learning frameworks (time permitting) for univariate data.
+(2) Benchmark CoST against some other deep learning frameworks (time permitting) for univariate data.
 
 (3) Rerun CoST to get metric estimates on local machine, testing the reproducibility of the representation learning and prediction function estimation - *reproducibility as in regenerating metrics using the original author's code and data*.
