@@ -13,4 +13,4 @@
 
 (2) Benchmark CoST against some traditional time series models and some other deep learning frameworks (time permitting) for univariate data.
 
-(3) Rerun CoST to get metric estimates on local machine, testing the reproducibility of the representation learning and prediction function estimation - *reproducibility as in regenerating metrics using the author's code and data*.
+(3) Rerun CoST to get metric estimates on local machine, testing the reproducibility of the representation learning and prediction function estimation - *reproducibility as in regenerating metrics using the original author's code and data*.
