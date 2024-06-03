@@ -4,10 +4,9 @@ import matplotlib.pyplot as plt
 os.chdir("../")
 
 
-def load_data():
-    ett = pd.read_csv("data/ETTh1.csv")
-    weather = pd.read_csv("data/WTH.csv")
-    return ett, weather
+def load_data(fname="data/ETTh1.csv"):
+    df = pd.read_csv(fname)
+    return df
 
 def plot_col(data, col):
     plt.plot(data[col])
@@ -17,6 +16,4 @@ def plot_col(data, col):
     plt.show()
 
 if __name__ == "__main__":
-    ett, weather = load_data()
-    plot_col(ett, "OT")
-    plot_col(weather, "WetBulbCelsius")
+    etth1 = load_data(fname="data/ETTh1.csv")
