@@ -10,6 +10,7 @@ library(astsa)
 library(tseries)
 library(forecast)
 library(KFAS)
+library(mgcv)
 library(bayesforecast)
 ```
 
@@ -25,14 +26,17 @@ weather = read.csv("./data/WTH.csv")
 # univariate time series
 # https://stackoverflow.com/questions/33782218/how-to-create-a-time-series-of-hourly-data
 first_hour_etth1 = 24*(as.Date("2016-07-01 00:00:00")-as.Date("2016-1-1 00:00:00"))
-etth1.ts = ts(data=etth1$OT, start=c(2016, first_hour_etth1), freq=24)
+etth1.ts = ts(data=etth1$OT, start=c(2016, first_hour_etth1), freq=24*365)
 etth1.ts = (etth1.ts-mean(etth1.ts))/sd(etth1.ts)
 
 etth2.ts = ts(data=etth2$OT, start=c(2016, first_hour_etth1), freq=24*365)
 etth2.ts = (etth2.ts-mean(etth2.ts))/sd(etth2.ts)
 
-ettm1.ts = ts(data=ettm1$OT, start=c(2016, first_hour_etth1), freq=24*365)
+# ettm1
+
+ettm1.ts = ts(data=ettm1$OT, start=c(2016, first_hour_etth1), freq=4*24*365)
 ettm1.ts = (ettm1.ts-mean(ettm1.ts))/sd(ettm1.ts)
+
 
 weather.ts = ts(data=weather$WetBulbCelsius, start=c(2010, 0), freq=24*365)
 weather.ts = (weather.ts-mean(weather.ts))/sd(weather.ts)
@@ -46,33 +50,90 @@ plot(weather.ts, main="Weather Wet Bulb Temperature (Celsius)")
 ## Autocorrelation of current time series
 
 ```{r}
+# original data can't be operated on directly due to slow decrease in acf across lags
+par(mfrow=c(2,2))
 # first diagnose the autocorrelation of the existing time series
-length(etth1.ts)
-pacf(etth1.ts, lag.max=200)
+# pacf(etth1.ts, lag.max=200)
 acf(etth1.ts, lag.max=200)
 
-pacf(weather.ts)
-acf(weather.ts)
+acf(etth2.ts, lag.max=200)
+
+acf(ettm1.ts, lag.max=200)
+
+# pacf(weather.ts)
+acf(weather.ts, lag.max=200)
+```
+
+```{r}
+par(mfrow=c(1,2))
+etth1_time = time(etth1.ts)
+reg1 = lm(etth1.ts~etth1_time+I(etth1_time^5)+I(etth1_time^6))
+
+plot(etth1.ts)
+points(etth1_time, predict.lm(reg1),type='l',col='blue')
+
+# dfetth1 = data.frame(ot = etth1$OT, week = as.integer(strftime(etth1$date, format = "%V")), year = as.integer(strftime(etth1$date, format = "%G")))
+# unique(dfetth1$year)
+# gam_model1 = gam(ot ~ s(year)+s(week), data = dfetth1)
+# 
+# plot(gam_model1)
+
+
+seasonality_etth1 = etth1.ts-predict.lm(reg1)
+
+f1 = 1
+f2 = 2
+d = 24*365
+v1 = cos(2*base::pi*f1*1:length(etth1.ts)/d)
+v2 = sin(2*base::pi*f1*1:length(etth1.ts)/d)
+v3 = cos(2*base::pi*f2*1:length(etth1.ts)/d)
+v4 = sin(2*base::pi*f2*1:length(etth1.ts)/d)
+
+seasonal_fit1 = lm(seasonality_etth1 ~ 1 + v1 + v2 + v3 + v4)
+plot(1:length(etth1.ts), seasonality_etth1, type="l")
+points(1:length(etth1.ts), seasonal_fit1$fitted, type = "l", col = "firebrick",lwd=3)
+
+after_trend_seasonality_etth1 = seasonality_etth1-seasonal_fit1$fitted
+
+
+gam1 = gam(after_trend_seasonality_etth1 ~ s(time(etth1.ts)))
+
+plot(1:length(etth1.ts), after_trend_seasonality_etth1, type="l")
+points(1:length(etth1.ts), gam1$fitted.values, type = "l", col = "firebrick",lwd=3)
+plot(after_trend_seasonality_etth1-gam1$fitted.values)
+
+
+gam1 = gam(after_trend_seasonality_etth1 ~ s(time(etth1.ts)))
+
+plot(1:length(etth1.ts), after_trend_seasonality_etth1, type="l")
+points(1:length(etth1.ts), gam1$fitted.values, type = "l", col = "firebrick",lwd=3)
+plot(after_trend_seasonality_etth1-gam1$fitted.values)
+
+
+acf(after_trend_seasonality_etth1-gam1$fitted.values,lag.max=200)
+
 ```
 
 ## Differencing
 
 ```{r}
-par(mfrow=c(2,2))
 # Electricity - trend elimination
 
-diff_etth1.ts = diff(etth1.ts)
-diff2_etth1.ts = diff(diff(etth1.ts))
-acf(diff_etth1.ts, lag.max=200)
-acf(diff2_etth1.ts,lag.max=200)
+# etth1
 
+# original
+acf(diff(diff(etth1.ts,lag=1), lag=24*365), lag.max=200)
 
-diff_etth2.ts = diff(etth2.ts)
-diff2_etth2.ts = diff(diff(etth2.ts))
-diff3_etth2.ts = diff(diff(diff(etth2.ts)))
-acf(diff_etth2.ts, lag.max=200)
-acf(diff2_etth2.ts,lag.max=200)
-acf(diff3_etth2.ts,lag.max=200)
+# suggests differencing once is sufficient
+acf(diff(diff(after_trend_seasonality_etth1-gam1$fitted.values,lag=1),lag=24*365), lag.max=200)
+
+# ettm1
+
+diff_ettm1.ts = diff(ettm1.ts)
+diff2_ettm1.ts = diff(diff(ettm1.ts))
+diff3_ettm1.ts = diff(diff(diff(ettm1.ts)))
+acf(diff_ettm1.ts, lag.max=100)
+acf(diff2_ettm1.ts,lag.max=100)
 
 # Weather 
 
@@ -80,6 +141,16 @@ diff_weather.ts = diff(weather.ts)
 diff2_weather.ts = diff(diff(weather.ts))
 acf(diff_weather.ts,lag.max=200)
 acf(diff2_weather.ts,lag.max=200)
+```
+
+```{r}
+par(mfrow=c(2,2))
+diff_etth2.ts = diff(etth2.ts)
+diff2_etth2.ts = diff(diff(etth2.ts))
+diff3_etth2.ts = diff(diff(diff(etth2.ts)))
+acf(diff_etth2.ts, lag.max=200)
+acf(diff2_etth2.ts,lag.max=200)
+acf(diff3_etth2.ts,lag.max=200)
 
 
 plot(decompose(diff_weather.ts))
@@ -87,14 +158,13 @@ plot(decompose(diff_weather.ts))
 # Augmented Dickey-Fuller Test 
 
 # reject null that ts is non-stationary
-adf.test(weather.ts)
-adf.test(diff_weather.ts)
 
 ```
 
 ## Run some spectral analysis for seasonality detection
 
 ```{r}
+
 pgram = abs(etth1.ts)^2/length(etth1.ts)
 which.max(pgram)
 plot(pgram, type = "h")
@@ -125,7 +195,7 @@ points(forecast[1:24], type="l", col="blue")
 ```{r}
 # ETTH1
 # Ideal to difference twice to remove trend. Estimates using CSS-ML
-etth1_model1 = arima(etth1.ts, order = c(1,2,0))
+etth1_model1 = arima(etth1.ts, order = c(0,1,1))
 plot(etth1.ts)
 fit1 = etth1.ts - residuals(etth1_model1)
 points(fit1, type = "l", col = "lightblue", lty = 2, lwd=0.2)
@@ -133,7 +203,9 @@ points(fit1, type = "l", col = "lightblue", lty = 2, lwd=0.2)
 acf(residuals(etth1_model1), lag.max=200)
 
 # seasonal component every 24 time steps (every 24 hours).
-etth1_model2 = arima(etth1.ts, order = c(1,2,0), seasonal=list(order=c(1,0,0), period=24))
+etth1_model2 = arima(etth1.ts, order = c(0,1,1), seasonal=list(order=c(0,1,0), period=24))
+
+
 plot(etth1.ts)
 fit2 = etth1.ts - residuals(etth1_model2)
 points(fit2, type = "l", col = "firebrick", lty = 2, lwd=0.2)
@@ -141,20 +213,22 @@ points(fit2, type = "l", col = "firebrick", lty = 2, lwd=0.2)
 acf(residuals(etth1_model2), lag.max=200)
 
 # significant lag 1 and 2 components. Trying MA component
-etth1_model3 = arima(etth1.ts, order = c(2,2,0), seasonal=list(order=c(0,2,0), period=24))
+# seasonal ma are along the edge of unit circle
+etth1_model3 = arima(etth1.ts, order = c(0,1,2), seasonal=list(order=c(0,1,1), period=24))
 plot(etth1.ts)
 fit3 = etth1.ts - residuals(etth1_model3)
 points(fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
 
-acf(residuals(etth1_model3), lag.max=8000)
-acf(residuals(etth1_model3), lag.max=100)
+acf(residuals(etth1_model3), lag.max=300)
+
+autoplot(etth1_model3)
 
 # we reject the null hypothesis that lag-1 and original time series are independent.
-sarima(etth1.ts,p=2,d=2,q=0,P=0,D=2,Q=0,S=24)
+# sarima(etth1.ts,p=2,d=2,q=0,P=0,D=2,Q=0,S=24)
 ```
 
 ```{r}
-# ETTh2 - 3rd order differencing. Trying an AR term due to acf plot.
+# ETTh2
 etth2_model1 = arima(etth2.ts, order=c(1,3,0))
 plot(etth2.ts)
 etth2_fit1 = etth2.ts - residuals(etth2_model1)
@@ -173,6 +247,8 @@ acf(residuals(etth2_model1), lag.max=200)
 ```{r}
 # Evaluation
 
+# Coefficients from SARIMA may be close to extremes of the unit circle.
+
 # Train/Validation/Test Split
 get_evaluation_on_ts = function(input_ts=etth1.ts) {
   train_size = 0.8
@@ -181,8 +257,8 @@ get_evaluation_on_ts = function(input_ts=etth1.ts) {
   test_start = (train_size*length(input_ts))+1
   test = input_ts[test_start:length(input_ts)]
   # may add as a parameter
-  evaluated_model1 = arima(train, order = c(2,2,0), seasonal=list(order=c(0,2,0), period=24))
-
+  evaluated_model1 = arima(train, order = c(0,1,2), seasonal=list(order=c(0,1,2), period=24))
+  print(evaluated_model1)
   res_lst = list()
   for (pred_len in c(24, 48, 168, 336, 720)) {
     curr_pred = predict(evaluated_model1, n.ahead=pred_len)$pred
@@ -197,9 +273,8 @@ get_evaluation_on_ts = function(input_ts=etth1.ts) {
     res_lst[paste("mse_",pred_len,sep="")] = mse
     res_lst[paste("mae_",pred_len,sep="")] = mae
   }
-  return(res_lst)
+  return()
 }
-
 get_evaluation_on_ts(etth1.ts)
 
 ```
