@@ -26,20 +26,21 @@ weather = read.csv("./data/WTH.csv")
 # univariate time series
 # https://stackoverflow.com/questions/33782218/how-to-create-a-time-series-of-hourly-data
 first_hour_etth1 = 24*(as.Date("2016-07-01 00:00:00")-as.Date("2016-1-1 00:00:00"))
-etth1.ts = ts(data=etth1$OT, start=c(2016, first_hour_etth1), freq=24*365)
-etth1.ts = (etth1.ts-mean(etth1.ts))/sd(etth1.ts)
+etth1.ts.original = ts(data=etth1$OT, start=c(2016, first_hour_etth1), freq=24*365)
 
-etth2.ts = ts(data=etth2$OT, start=c(2016, first_hour_etth1), freq=24*365)
-etth2.ts = (etth2.ts-mean(etth2.ts))/sd(etth2.ts)
+etth1.ts = (etth1.ts.original-mean(etth1.ts.original))/sd(etth1.ts.original)
+
+etth2.ts.original = ts(data=etth2$OT, start=c(2016, first_hour_etth1), freq=24*365)
+etth2.ts = (etth2.ts.original-mean(etth2.ts.original))/sd(etth2.ts.original)
 
 # ettm1
 
-ettm1.ts = ts(data=ettm1$OT, start=c(2016, first_hour_etth1), freq=4*24*365)
-ettm1.ts = (ettm1.ts-mean(ettm1.ts))/sd(ettm1.ts)
+ettm1.ts.original = ts(data=ettm1$OT, start=c(2016, first_hour_etth1), freq=4*24*365)
+ettm1.ts = (ettm1.ts.original-mean(ettm1.ts.original))/sd(ettm1.ts.original)
 
 
-weather.ts = ts(data=weather$WetBulbCelsius, start=c(2010, 0), freq=24*365)
-weather.ts = (weather.ts-mean(weather.ts))/sd(weather.ts)
+weather.ts.original = ts(data=weather$WetBulbCelsius, start=c(2010, 0), freq=24*365)
+weather.ts = (weather.ts.original-mean(weather.ts.original))/sd(weather.ts.original)
 
 plot(etth1.ts, main="ETTH1 Electricity Oil Temperature")
 plot(etth2.ts, main="ETTH2 Electricity Oil Temperature")
@@ -65,52 +66,47 @@ acf(weather.ts, lag.max=200)
 ```
 
 ```{r}
-par(mfrow=c(1,2))
-etth1_time = time(etth1.ts)
-reg1 = lm(etth1.ts~etth1_time+I(etth1_time^5)+I(etth1_time^6))
-
-plot(etth1.ts)
-points(etth1_time, predict.lm(reg1),type='l',col='blue')
-
-# dfetth1 = data.frame(ot = etth1$OT, week = as.integer(strftime(etth1$date, format = "%V")), year = as.integer(strftime(etth1$date, format = "%G")))
-# unique(dfetth1$year)
-# gam_model1 = gam(ot ~ s(year)+s(week), data = dfetth1)
-# 
-# plot(gam_model1)
-
-
-seasonality_etth1 = etth1.ts-predict.lm(reg1)
-
-f1 = 1
-f2 = 2
-d = 24*365
-v1 = cos(2*base::pi*f1*1:length(etth1.ts)/d)
-v2 = sin(2*base::pi*f1*1:length(etth1.ts)/d)
-v3 = cos(2*base::pi*f2*1:length(etth1.ts)/d)
-v4 = sin(2*base::pi*f2*1:length(etth1.ts)/d)
-
-seasonal_fit1 = lm(seasonality_etth1 ~ 1 + v1 + v2 + v3 + v4)
-plot(1:length(etth1.ts), seasonality_etth1, type="l")
-points(1:length(etth1.ts), seasonal_fit1$fitted, type = "l", col = "firebrick",lwd=3)
-
-after_trend_seasonality_etth1 = seasonality_etth1-seasonal_fit1$fitted
-
-
-gam1 = gam(after_trend_seasonality_etth1 ~ s(time(etth1.ts)))
-
-plot(1:length(etth1.ts), after_trend_seasonality_etth1, type="l")
-points(1:length(etth1.ts), gam1$fitted.values, type = "l", col = "firebrick",lwd=3)
-plot(after_trend_seasonality_etth1-gam1$fitted.values)
-
-
-gam1 = gam(after_trend_seasonality_etth1 ~ s(time(etth1.ts)))
-
-plot(1:length(etth1.ts), after_trend_seasonality_etth1, type="l")
-points(1:length(etth1.ts), gam1$fitted.values, type = "l", col = "firebrick",lwd=3)
-plot(after_trend_seasonality_etth1-gam1$fitted.values)
-
-
-acf(after_trend_seasonality_etth1-gam1$fitted.values,lag.max=200)
+gen_plots = function(dataset=etth1.ts) {
+  par(mfrow=c(2,4))
+  etth1_time = time(dataset)
+  reg1 = lm(dataset~etth1_time+I(etth1_time^3))
+  
+  plot(etth1.ts)
+  points(etth1_time, predict.lm(reg1),type='l',col='blue')
+  
+  seasonality_etth1 = etth1.ts-predict.lm(reg1)
+  
+  f1 = 1
+  f2 = 12
+  f3 = 24
+  d = 24*365
+  v1 = cos(2*base::pi*f1*(1:length(dataset))/d)
+  v2 = sin(2*base::pi*f1*(1:length(dataset))/d)
+  v3 = cos(2*base::pi*f2*(1:length(dataset))/d)
+  v4 = sin(2*base::pi*f2*(1:length(dataset))/d)
+  v5 = cos(2*base::pi*f3*(1:length(dataset))/d)
+  v6 = sin(2*base::pi*f3*(1:length(dataset))/d)
+  
+  seasonal_fit1 = lm(seasonality_etth1 ~ 1 + v1 + v2 + v3 + v4)
+  plot(1:length(dataset), seasonality_etth1, type="l")
+  points(1:length(dataset), seasonal_fit1$fitted, type = "l", col = "firebrick",lwd=3)
+  
+  coef(seasonal_fit1)
+  
+  after_trend_seasonality_etth1 = seasonality_etth1-seasonal_fit1$fitted
+  
+  
+  gam1 = gam(after_trend_seasonality_etth1 ~ s(time(dataset)))
+  
+  plot(1:length(dataset), after_trend_seasonality_etth1, type="l")
+  points(1:length(dataset), gam1$fitted.values, type = "l", col = "firebrick",lwd=3)
+  plot(after_trend_seasonality_etth1-gam1$fitted.values)
+  
+  
+  acf(after_trend_seasonality_etth1-gam1$fitted.values,lag.max=200)
+  
+}
+gen_plots(etth2.ts)
 
 ```
 
@@ -118,62 +114,24 @@ acf(after_trend_seasonality_etth1-gam1$fitted.values,lag.max=200)
 
 ```{r}
 # Electricity - trend elimination
-
 # etth1
-
-# original
 acf(diff(diff(etth1.ts,lag=1), lag=24*365), lag.max=200)
-
-# suggests differencing once is sufficient
 acf(diff(diff(after_trend_seasonality_etth1-gam1$fitted.values,lag=1),lag=24*365), lag.max=200)
+# 
+# Box.test(diff(diff(etth1.ts,lag=1), lag=24), type="Ljung-Box")
+# adf.test(diff(diff(etth1.ts,lag=1), lag=24))
+
+# etth2
+acf(diff(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=1), lag=24*365), lag.max=200)
+adf.test(diff(diff(etth2.ts,lag=1), lag=24))
 
 # ettm1
-
-diff_ettm1.ts = diff(ettm1.ts)
-diff2_ettm1.ts = diff(diff(ettm1.ts))
-diff3_ettm1.ts = diff(diff(diff(ettm1.ts)))
-acf(diff_ettm1.ts, lag.max=100)
-acf(diff2_ettm1.ts,lag.max=100)
+acf(diff(diff(ettm1.ts,lag=1), lag=24*180), lag.max=200)
+adf.test(diff(diff(ettm1.ts,lag=1), lag=24))
 
 # Weather 
-
-diff_weather.ts = diff(weather.ts)
-diff2_weather.ts = diff(diff(weather.ts))
-acf(diff_weather.ts,lag.max=200)
-acf(diff2_weather.ts,lag.max=200)
-```
-
-```{r}
-par(mfrow=c(2,2))
-diff_etth2.ts = diff(etth2.ts)
-diff2_etth2.ts = diff(diff(etth2.ts))
-diff3_etth2.ts = diff(diff(diff(etth2.ts)))
-acf(diff_etth2.ts, lag.max=200)
-acf(diff2_etth2.ts,lag.max=200)
-acf(diff3_etth2.ts,lag.max=200)
-
-
-plot(decompose(diff_weather.ts))
-
-# Augmented Dickey-Fuller Test 
-
-# reject null that ts is non-stationary
-
-```
-
-## Run some spectral analysis for seasonality detection
-
-```{r}
-
-pgram = abs(etth1.ts)^2/length(etth1.ts)
-which.max(pgram)
-plot(pgram, type = "h")
-
-x.spec = spectrum(etth1.ts)
-spx <- x.spec$freq
-spy <- 2*x.spec$spec
-
-plot (spy~spx, subset=spx<=100,xlab="frequency",ylab="spectral density",type = "l")
+acf(diff(weather.ts),lag.max=200)
+acf(diff(diff(diff(weather.ts),lag=24),lag=24*365) ,lag.max=200)
 ```
 
 ## Trying different models based on preliminary plots
@@ -186,10 +144,10 @@ train_etth1.ts = ts(etth1.ts[1:(length(etth1.ts)*0.80)], start=c(2016, first_hou
 test_etth1.ts = etth1.ts[test_start:length(etth1.ts)]
 ssmodel1 = SSModel(train_etth1.ts ~ SSMtrend(1, Q = NA) + SSMseasonal(24, sea.type = "dummy", Q = NA), H = NA)
 fitssmodel1 = fitSSM(ssmodel1, inits = c(0, 0, 0))
-n_ahead = 24
+n_ahead = 720
 forecast = predict(fitssmodel1$model, n.ahead = n_ahead, interval = "prediction")
-plot(test_etth1.ts[1:24],type="l",ylim=c(-3,0))
-points(forecast[1:24], type="l", col="blue")
+plot(test_etth1.ts[1:n_ahead],type="l",ylim=c(-3,0))
+points(forecast[1:n_ahead], type="l", col="blue")
 ```
 
 ```{r}
@@ -214,68 +172,178 @@ acf(residuals(etth1_model2), lag.max=200)
 
 # significant lag 1 and 2 components. Trying MA component
 # seasonal ma are along the edge of unit circle
-etth1_model3 = arima(etth1.ts, order = c(0,1,2), seasonal=list(order=c(0,1,1), period=24))
-plot(etth1.ts)
-fit3 = etth1.ts - residuals(etth1_model3)
+etth1_model3 = arima(after_trend_seasonality_etth1-gam1$fitted.values, order = c(0,1,1), seasonal=list(order=c(0,1,1), period=24))
+plot(after_trend_seasonality_etth1-gam1$fitted.values)
+fit3 = after_trend_seasonality_etth1-gam1$fitted.values - residuals(etth1_model3)
 points(fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
 
 acf(residuals(etth1_model3), lag.max=300)
 
 autoplot(etth1_model3)
 
+# ETTH2
+
+etth2_model1 = arima(etth2.ts, order = c(0,3,1))
+plot(etth2.ts)
+etth2_fit1 = etth2.ts - residuals(etth2_model1)
+points(etth2_fit1, type = "l", col = "lightblue", lty = 2, lwd=0.2)
+
+acf(residuals(etth2_model1), lag.max=200)
+
+# seasonal component every 24 time steps (every 24 hours).
+etth2_model2 = arima(etth2.ts, order = c(0,3,1), seasonal=list(order=c(0,1,0), period=24))
+
+
+plot(etth2.ts)
+etth2_fit2 = etth2.ts - residuals(etth2_model2)
+points(etth2_fit2, type = "l", col = "firebrick", lty = 2, lwd=0.2)
+
+acf(residuals(etth2_model2), lag.max=200)
+
+# significant lag 1 and 2 components. Trying MA component
+# seasonal ma are along the edge of unit circle
+etth2_model3 = arima(etth2.ts, order = c(1,3,1), seasonal=list(order=c(0,1,1), period=24))
+plot(etth2.ts)
+etth2_fit3 = etth2.ts - residuals(etth2_model3)
+points(etth2_fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
+
+acf(residuals(etth2_model3), lag.max=300)
+
+
 # we reject the null hypothesis that lag-1 and original time series are independent.
-# sarima(etth1.ts,p=2,d=2,q=0,P=0,D=2,Q=0,S=24)
-```
-
-```{r}
-# ETTh2
-etth2_model1 = arima(etth2.ts, order=c(1,3,0))
-plot(etth2.ts)
-etth2_fit1 = etth2.ts - residuals(etth2_model1)
-points(etth2_fit1, type = "l", col = "lightblue", lty = 2, lwd=0.2)
-acf(residuals(etth2_model1), lag.max=200)
-
-# Appears to have a seasonal component
-etth2_model1 = arima(etth2.ts, order=c(1,3,0))
-plot(etth2.ts)
-etth2_fit1 = etth2.ts - residuals(etth2_model1)
-points(etth2_fit1, type = "l", col = "lightblue", lty = 2, lwd=0.2)
-acf(residuals(etth2_model1), lag.max=200)
 ```
 
 
 ```{r}
 # Evaluation
-
 # Coefficients from SARIMA may be close to extremes of the unit circle.
-
 # Train/Validation/Test Split
-get_evaluation_on_ts = function(input_ts=etth1.ts) {
-  train_size = 0.8
-  test_size = 0.2
-  train = input_ts[1:(train_size*length(input_ts))]
-  test_start = (train_size*length(input_ts))+1
-  test = input_ts[test_start:length(input_ts)]
+get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.original,include_trend_seasonality=F) {
+  train_prop = 0.8
+  test_prop = 0.2
+  train_size = (train_prop*length(input_ts))
+  train = ts(input_ts[1:train_size], start=c(2016, first_hour_etth1), freq=24*365)
+
+  test_start = train_size+1
+  test = ts(input_ts[test_start:length(input_ts)], start=c(2018,784), freq=24*365)
+  evaluated_model1 = arima(train, order = c(1,3,2), seasonal=list(order=c(0,1,2), period=24))
+  # evaluated_model1 = arima(train, order = c(0,1,2), seasonal=list(order=c(0,1,2), period=24))
+  if (include_trend_seasonality) {
+    time_var_train = time(train)
+    reg1_ = lm(train~time_var_train+I(time_var_train^3))
+    seasonality_data = train-predict.lm(reg1_)
+    
+    f1 = 1
+    f2 = 12
+    d = 24*365
+    v1 = cos(2*base::pi*f1*(1:train_size)/d)
+    v2 = sin(2*base::pi*f1*(1:train_size)/d)
+    v3 = cos(2*base::pi*f2*(1:train_size)/d)
+    v4 = sin(2*base::pi*f2*(1:train_size)/d)
+    seasonal_fit_ = lm(seasonality_data ~ 1 + v1 + v2 + v3 + v4)
+
+    processed_train = seasonality_data-seasonal_fit_$fitted
+    
+    evaluated_model1 = arima(train, order = c(0,3,1), seasonal=list(order=c(0,1,1), period=24))
+    # evaluated_model1 = arima(processed_train, order = c(0,1,1), seasonal=list(order=c(0,1,1), period=24))
+  }
+  
+  
   # may add as a parameter
-  evaluated_model1 = arima(train, order = c(0,1,2), seasonal=list(order=c(0,1,2), period=24))
-  print(evaluated_model1)
   res_lst = list()
   for (pred_len in c(24, 48, 168, 336, 720)) {
-    curr_pred = predict(evaluated_model1, n.ahead=pred_len)$pred
+    pred_call = predict(evaluated_model1, n.ahead=pred_len)
+    curr_pred = pred_call$pred
+    if (include_trend_seasonality) {
+      reg1_preds = coef(reg1_)[[1]] + coef(reg1_)[[2]]*time(test)[1:pred_len] + coef(reg1_)[[3]]*(time(test)[1:pred_len]^3)
 
-    # curr_pred = curr_pred[(length(curr_pred)-(pred_len-1)):length(curr_pred)]
-
-    plot(1:pred_len, test[1:pred_len],type="l")
-    points(1:pred_len, curr_pred,type="l",col="lightblue")
-    
-    mse = mean( (test[1:pred_len]-curr_pred)^2)
-    mae = mean( abs(test[1:pred_len]-curr_pred))
-    res_lst[paste("mse_",pred_len,sep="")] = mse
-    res_lst[paste("mae_",pred_len,sep="")] = mae
+      v1 = cos(2*base::pi*f1*(test_start:(test_start+pred_len-1))/d)
+      v2 = sin(2*base::pi*f1*(test_start:(test_start+pred_len-1))/d)
+      v3 = cos(2*base::pi*f2*(test_start:(test_start+pred_len-1))/d)
+      v4 = sin(2*base::pi*f2*(test_start:(test_start+pred_len-1))/d)
+      seasonal_preds = coef(seasonal_fit_)[[1]]+coef(seasonal_fit_)[[2]]*v1+
+                       coef(seasonal_fit_)[[3]]*v2+coef(seasonal_fit_)[[4]]*v3+
+                       coef(seasonal_fit_)[[5]]*v4
+      curr_pred = curr_pred + reg1_preds+seasonal_preds
+    }
+    curr_se = pred_call$se
+    print(curr_pred)
+    plot(1:pred_len, test[1:pred_len]*sd(original_input_ts)+mean(original_input_ts),type="l",xlab="Time Steps", ylab="Oil Temperature (Celsius)")
+    points(1:pred_len, curr_pred*sd(original_input_ts)+mean(original_input_ts),type="l",col="darkblue")
   }
   return()
 }
-get_evaluation_on_ts(etth1.ts)
+# get_evaluation_on_ts(etth1.ts,original_input_ts=etth1.ts.original,include_trend_seasonality=F)
+get_evaluation_on_ts(etth2.ts,original_input_ts=etth2.ts.original, include_trend_seasonality=F)
+```
+
+```{r}
+get_evaluation_on_ts = function(input_ts=etth1.ts, include_trend_seasonality=F) {
+  train_prop = 0.8
+  test_prop = 0.2
+  train_size = (train_prop*length(input_ts))
+  test_size = (test_prop*length(input_ts))
+  res_lst = list()
+  for (pred_len in c(24, 48, 168, 336, 720)) {
+    avg_mse = 0
+    avg_mae = 0
+    for (trial in 1:10){
+      print(paste("Prediction Length:", pred_len, "Trial:", trial))
+      offset = sample(0:(test_size-pred_len), size=1)
+      train = ts(input_ts[(1+offset):(train_size+offset)], start=c(2016, first_hour_etth1+offset), freq=24*365)
+      evaluated_model1 = arima(train, order = c(0,1,2), seasonal=list(order=c(0,1,2), period=24))
+      
+      test_start = train_size+1
+      test = ts(input_ts[test_start:length(input_ts)], start=c(2018,784), freq=24*365)
+      if (include_trend_seasonality) {
+        time_var_train = time(train)
+        reg1_ = lm(train~time_var_train+I(time_var_train^3))
+        seasonality_data = train-predict.lm(reg1_)
+        
+        f1 = 1
+        f2 = 12
+        d = 24*365
+        v1 = cos(2*base::pi*f1*((1+offset):(train_size+offset) )/d)
+        v2 = sin(2*base::pi*f1*((1+offset):(train_size+offset) )/d)
+        v3 = cos(2*base::pi*f2*((1+offset):(train_size+offset) )/d)
+        v4 = sin(2*base::pi*f2*((1+offset):(train_size+offset) )/d)
+        seasonal_fit_ = lm(seasonality_data ~ 1 + v1 + v2 + v3 + v4)
+    
+        processed_train = seasonality_data-seasonal_fit_$fitted
+        
+        evaluated_model1 = arima(processed_train, order = c(0,1,1), seasonal=list(order=c(0,1,1), period=24))
+      }
+      pred_call = predict(evaluated_model1, n.ahead=pred_len)
+      curr_pred = pred_call$pred
+      if (include_trend_seasonality) {
+        reg1_preds = coef(reg1_)[[1]] + coef(reg1_)[[2]]*time(test)[(1+offset):(offset+pred_len)] + coef(reg1_)[[3]]*(time(test)[(1+offset):(offset+pred_len)]^3)
+  
+        v1 = cos(2*base::pi*f1*((test_start+offset):(test_start+offset+pred_len-1))/d)
+        v2 = sin(2*base::pi*f1*((test_start+offset):(test_start+offset+pred_len-1))/d)
+        v3 = cos(2*base::pi*f2*((test_start+offset):(test_start+offset+pred_len-1))/d)
+        v4 = sin(2*base::pi*f2*((test_start+offset):(test_start+offset+pred_len-1))/d)
+        seasonal_preds = coef(seasonal_fit_)[[1]]+coef(seasonal_fit_)[[2]]*v1+
+                         coef(seasonal_fit_)[[3]]*v2+coef(seasonal_fit_)[[4]]*v3+
+                         coef(seasonal_fit_)[[5]]*v4
+        curr_pred = curr_pred + reg1_preds+seasonal_preds
+      }
+      curr_se = pred_call$se
+      mse = mean( (test[(1+offset):(pred_len+offset)]-curr_pred)^2)
+      mae = mean( abs(test[(1+offset):(pred_len+offset)]-curr_pred))
+      avg_mse = avg_mse + mse
+      avg_mae = avg_mae + mae
+    }
+    res_lst[paste("mse_",pred_len,sep="")] = avg_mse/10
+    res_lst[paste("mae_",pred_len,sep="")] = avg_mae/10
+  }
+  return(res_lst)
+}
+
+get_evaluation_on_ts(etth1.ts,include_trend_seasonality=T)
 
 ```
+
+
+
+
 
