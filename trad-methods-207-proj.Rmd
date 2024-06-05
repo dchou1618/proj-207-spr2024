@@ -9,6 +9,7 @@ output: pdf_document
 library(astsa)
 library(tseries)
 library(forecast)
+library(aTSA)
 library(KFAS)
 library(mgcv)
 library(bayesforecast)
@@ -53,7 +54,7 @@ plot(etth1.ts, main="ETTH1 Electricity Oil Temperature")
 plot(etth2.ts, main="ETTH2 Electricity Oil Temperature")
 plot(ettm1.ts, main="ETTM1 Electricity Oil Temperature")
 plot(weather.ts, main="Weather Wet Bulb Temperature (Celsius)")
-plot(aeph.ts, main="AEPh Megawatt Energy Consumption")
+plot(aeph.ts, main="AEPh Megawatt Energy Consumption",ylab="Normalized Megawatt Energy Consumption")
 ```
 
 ## Autocorrelation of current time series
@@ -62,6 +63,7 @@ plot(aeph.ts, main="AEPh Megawatt Energy Consumption")
 # original data can't be operated on directly due to slow decrease in acf across lags
 par(mfrow=c(2,2))
 # first diagnose the autocorrelation of the existing time series
+
 # pacf(etth1.ts, lag.max=200)
 acf(etth1.ts, lag.max=200)
 
@@ -72,7 +74,7 @@ acf(ettm1.ts, lag.max=200)
 # pacf(weather.ts)
 acf(weather.ts, lag.max=200)
 
-acf(aeph.ts, lag.max=200)
+acf(aeph.ts, lag.max=2000)
 ```
 
 ```{r}
@@ -132,40 +134,39 @@ gen_plots(aeph.ts)
 # etth1
 acf(diff(diff(etth1.ts,lag=1), lag=24*365), lag.max=200)
 acf(diff(diff(after_trend_seasonality_etth1-gam1$fitted.values,lag=1),lag=24*365), lag.max=200)
-# 
-# Box.test(diff(diff(etth1.ts,lag=1), lag=24), type="Ljung-Box")
-# adf.test(diff(diff(etth1.ts,lag=1), lag=24))
+
+adf.test(diff(diff(etth1.ts,lag=1), lag=24))
+stationary.test(etth1.ts)
+
 
 # etth2
-acf(diff(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=1), lag=24*365), lag.max=200)
-adf.test(diff(diff(etth2.ts,lag=1), lag=24))
+acf(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=24), lag.max=200)
+adf.test(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=24))
+
+stationary.test(etth2.ts)
+
 
 # ettm1
-acf(diff(diff(ettm1.ts,lag=1), lag=1), lag.max=200)
+acf(diff(ettm1.ts,lag=4*12), lag.max=200)
+
+adf.test(ettm1.ts)
+stationary.test(ettm1.ts)
 
 # Weather 
 acf(diff(diff(weather.ts),lag=1),lag.max=200)
 
+adf.test(weather.ts)
+stationary.test(weather.ts)
+
 # Aeph
 
 acf(diff(aeph.ts,lag=24), lag.max=200)
+
+adf.test(aeph.ts)
+stationary.test(aeph.ts)
 ```
 
 ## Trying different models based on preliminary plots
-
-```{r}
-# KFAS
-test_start = (length(etth1.ts)*0.80)+1
-train_etth1.ts = ts(etth1.ts[1:(length(etth1.ts)*0.80)], start=c(2016, first_hour_etth1), frequency=24)
-
-test_etth1.ts = etth1.ts[test_start:length(etth1.ts)]
-ssmodel1 = SSModel(train_etth1.ts ~ SSMtrend(1, Q = NA) + SSMseasonal(24, sea.type = "dummy", Q = NA), H = NA)
-fitssmodel1 = fitSSM(ssmodel1, inits = c(0, 0, 0))
-n_ahead = 720
-forecast = predict(fitssmodel1$model, n.ahead = n_ahead, interval = "prediction")
-plot(test_etth1.ts[1:n_ahead],type="l",ylim=c(-3,0))
-points(forecast[1:n_ahead], type="l", col="blue")
-```
 
 ```{r}
 # ETTH1
@@ -246,7 +247,7 @@ acf(residuals(ettm1_model2), lag.max=200)
 
 # significant lag 1 and 2 components. Trying MA component
 # seasonal ma are along the edge of unit circle
-ettm1_model3 = arima(ettm1.ts, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=4*4))
+ettm1_model3 = arima(ettm1.ts, order = c(1,0,1), seasonal=list(order=c(0,1,1), period=4*12))
 plot(ettm1.ts)
 ettm1_fit3 = ettm1.ts - residuals(ettm1_model3)
 points(ettm1_fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
@@ -278,6 +279,7 @@ acf(residuals(aeph_model3), lag.max=300)
 # Coefficients from SARIMA may be close to extremes of the unit circle.
 # Train/Validation/Test Split
 get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.original,include_trend_seasonality=F) {
+  # get validation middle 0.2 next time
   train_prop = 0.8
   test_prop = 0.2
   train_size = (train_prop*length(input_ts))
@@ -344,7 +346,7 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
 # get_evaluation_on_ts(etth2.ts,original_input_ts=etth2.ts.original, include_trend_seasonality=T)
 # get_evaluation_on_ts(ettm1.ts,original_input_ts=ettm1.ts.original, include_trend_seasonality=T)
 # get_evaluation_on_ts(weather.ts,original_input_ts=weather.ts.original, include_trend_seasonality=F)
-get_evaluation_on_ts(aeph.ts,original_input_ts=aeph.ts.original, include_trend_seasonality=F)
+get_evaluation_on_ts(aeph.ts,original_input_ts=aeph.ts.original, include_trend_seasonality=T)
 
 ```
 
