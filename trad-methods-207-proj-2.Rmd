@@ -66,21 +66,20 @@ acf(weather.ts, lag.max=200)
 ```
 
 ```{r}
-ettm1.ts
 gen_plots = function(dataset=etth1.ts) {
   par(mfrow=c(2,4))
   etth1_time = time(dataset)
   reg1 = lm(dataset~etth1_time+I(etth1_time^3))
   
-  plot(dataset)
+  plot(etth1.ts)
   points(etth1_time, predict.lm(reg1),type='l',col='blue')
   
-  seasonality_etth1 = dataset-predict.lm(reg1)
+  seasonality_etth1 = etth1.ts-predict.lm(reg1)
   
   f1 = 1
   f2 = 12
   f3 = 24
-  d = 24*365*4
+  d = 24*365
   v1 = cos(2*base::pi*f1*(1:length(dataset))/d)
   v2 = sin(2*base::pi*f1*(1:length(dataset))/d)
   v3 = cos(2*base::pi*f2*(1:length(dataset))/d)
@@ -107,13 +106,9 @@ gen_plots = function(dataset=etth1.ts) {
   acf(after_trend_seasonality_etth1-gam1$fitted.values,lag.max=200)
   
 }
-gen_plots(ettm1.ts)
+gen_plots(etth2.ts)
 
 ```
-
-
-
-
 
 ## Differencing
 
@@ -131,10 +126,12 @@ acf(diff(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=1), lag=24*365), lag.max=20
 adf.test(diff(diff(etth2.ts,lag=1), lag=24))
 
 # ettm1
-acf(diff(diff(ettm1.ts,lag=1), lag=4), lag.max=200)
+acf(diff(diff(ettm1.ts,lag=1), lag=24*180), lag.max=200)
+adf.test(diff(diff(ettm1.ts,lag=1), lag=24))
 
 # Weather 
-acf(diff(diff(diff(weather.ts),lag=1),lag=4*24*180) ,lag.max=200)
+acf(diff(weather.ts),lag.max=200)
+acf(diff(diff(diff(weather.ts),lag=24),lag=24*365) ,lag.max=200)
 ```
 
 ## Trying different models based on preliminary plots
@@ -212,34 +209,8 @@ points(etth2_fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
 
 acf(residuals(etth2_model3), lag.max=300)
 
-# ETTM1
 
-ettm1_model1 = arima(ettm1.ts, order = c(0,1,1))
-plot(ettm1.ts)
-ettm1_fit1 = ettm1.ts - residuals(ettm1_model1)
-points(ettm1_fit1, type = "l", col = "lightblue", lty = 2, lwd=0.2)
-
-acf(residuals(ettm1_model1), lag.max=200)
-
-# seasonal component every 24 time steps (every 24 hours).
-ettm1_model2 = arima(ettm1.ts, order = c(0,1,1), seasonal=list(order=c(0,1,0), period=4))
-
-plot(ettm1.ts)
-ettm1_fit2 = ettm1.ts - residuals(ettm1_model2)
-points(ettm1_fit2, type = "l", col = "firebrick", lty = 2, lwd=0.2)
-
-acf(residuals(ettm1_model2), lag.max=200)
-
-# significant lag 1 and 2 components. Trying MA component
-# seasonal ma are along the edge of unit circle
-ettm1_model3 = arima(ettm1.ts, order = c(1,1,1), seasonal=list(order=c(0,1,1), period=4))
-plot(ettm1.ts)
-ettm1_fit3 = ettm1.ts - residuals(ettm1_model3)
-points(ettm1_fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
-
-acf(residuals(ettm1_model3), lag.max=300)
-
-
+# we reject the null hypothesis that lag-1 and original time series are independent.
 ```
 
 
