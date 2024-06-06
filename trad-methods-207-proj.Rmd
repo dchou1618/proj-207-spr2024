@@ -22,7 +22,7 @@ par(mfrow=c(2,2))
 etth1 = read.csv("./data/ETTh1.csv")
 etth2 = read.csv("./data/ETTh2.csv")
 ettm1 = read.csv("./data/ETTm1.csv")
-
+tail(etth1)
 weather = read.csv("./data/WTH.csv")
 aeph = read.csv("./data/AEP_hourly.csv")
 
@@ -127,22 +127,25 @@ gen_plots(aeph.ts)
 
 
 
-## Differencing
+## Differencing - trend elimination
 
 ```{r}
-# Electricity - trend elimination
 # etth1
-acf(diff(diff(etth1.ts,lag=1), lag=24*365), lag.max=200)
-acf(diff(diff(after_trend_seasonality_etth1-gam1$fitted.values,lag=1),lag=24*365), lag.max=200)
+acf(diff(diff(etth1.ts,lag=1), lag=1), lag.max=200)
 
-adf.test(diff(diff(etth1.ts,lag=1), lag=24))
+acf(diff(etth1.ts,lag=24), lag.max=200)
+acf(diff(etth1.ts,lag=24*2), lag.max=200)
+acf(diff(etth1.ts,lag=4), lag.max=200)
+
+adf.test(etth1.ts)
+adf.test(diff(etth1.ts))
 stationary.test(etth1.ts)
 
 
 # etth2
 acf(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=24), lag.max=200)
-adf.test(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=24))
 
+adf.test(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=24))
 stationary.test(etth2.ts)
 
 
@@ -171,22 +174,87 @@ stationary.test(aeph.ts)
 ```{r}
 # ETTH1
 # Ideal to difference twice to remove trend. Estimates using CSS-ML
-etth1_model1 = arima(etth1.ts, order = c(0,1,1))
-plot(etth1.ts)
-fit1 = etth1.ts - residuals(etth1_model1)
-points(fit1, type = "l", col = "lightblue", lty = 2, lwd=0.2)
+grid_search_cv = function(dataset, ar_range, ma_range, diff_range, periods, seasonal_ma_range, 
+                          seasonal_ar_range, pred_lens, n_folds, non_oos_prop,
+                          first_year, first_val, dataset_freq) {
+  if (n_folds <= 1) {
+    stop("Not enough folds")
+  }
+  
+  # OUTPUT
+  results = list()
+  
+  non_oos_size = length(dataset)*non_oos_prop
+  non_oos = ts(dataset[1:non_oos_size], start=c(first_year, first_val), freq=dataset_freq)
+  chunk_length = as.integer(non_oos_size/n_folds)
+  
+  for (pred_len in pred_lens) {
+    print(paste("Outer Loop prediction length:", pred_len))
+    for (fold in 1:(n_folds-1)) {
+      train_start = chunk_length*(fold-1)+1
+      train_end = fold*chunk_length-1
+      
+      validation_start = train_end + 1
+      if (fold == (n_folds-1)) {
+        validation_end = non_oos_size
+      } else {
+        validation_end = (fold+1)*chunk_length-1
+      }
+      train = non_oos[train_start:train_end]
+      validation = non_oos[validation_start:validation_end]
+      start.time = Sys.time()
+      print("Starting inner loop.")
+      for (ar_comp in ar_range) {
+        for (ma_comp in ma_range) {
+          for (diff in diff_range) {
+            print(paste("Current components: ", ar_comp, ",", diff, ",", ma_comp, " - fold: ", fold, sep=""))
+            for (curr_period in periods) {
+              for (seasonal_ma in seasonal_ma_range) {
+                for (seasonal_ar in seasonal_ar_range) {
+                  
+                  temp_model = arima(train, order = c(ar_comp,diff,ma_comp),
+                                     seasonal=list(order=c(seasonal_ar,1,seasonal_ma), 
+                                                   period=curr_period))
+                  pred_call = predict(temp_model, n.ahead=pred_len)
+                  curr_pred = pred_call$pred
+                  mse = mean( (validation[1:pred_len]-curr_pred)^2 )
+                  mae = mean( abs(validation[1:pred_len]-curr_pred) )
+                  
+                  results[[paste("(",ar_comp,",",diff,",",ma_comp, ",",seasonal_ar,",1,",
+                                 seasonal_ma,", curr_period:", 
+                                 curr_period,", prediction length:" ,
+                                 pred_len, " MSE", sep="")]] =
+                    c(results[[paste("(",ar_comp,",",diff,",",ma_comp, ",",seasonal_ar,",1,",
+                                 seasonal_ma,", curr_period:", 
+                                 curr_period,", prediction length:" ,
+                                 pred_len, " MSE", sep="")]], mse)
+                  results[[paste("(",ar_comp,",",diff,",",ma_comp, ",",seasonal_ar,",1,",
+                                 seasonal_ma,", curr_period:", 
+                                 curr_period,", prediction length:" ,
+                                 pred_len, " MAE", sep="")]] =
+                    c(results[[paste("(",ar_comp,",",diff,",",ma_comp, ",",seasonal_ar,",1,",
+                                 seasonal_ma,", curr_period:", 
+                                 curr_period,", prediction length:" ,
+                                 pred_len, " MAE", sep="")]], mae)
+                }
+              }
+            }
+          }
+        }
+      }
+      end.time = Sys.time()
+    }
+  }
+  return(results)
+}
 
-acf(residuals(etth1_model1), lag.max=200)
+# limit prediction lengths to long term (2nd longest).
+etth1_gridsearch = grid_search_cv(etth1.ts, 0:2, 0:2, 1:2, periods=24, seasonal_ma_range=0:1,  
+               seasonal_ar_range=0:0, pred_lens=c(336), n_folds=4, 
+               non_oos_prop=0.8, first_year = 2016, first_val = first_hour_etth1, 
+               dataset_freq = 24*365)
 
-# seasonal component every 24 time steps (every 24 hours).
-etth1_model2 = arima(etth1.ts, order = c(0,1,1), seasonal=list(order=c(0,1,0), period=24))
-
-
-plot(etth1.ts)
-fit2 = etth1.ts - residuals(etth1_model2)
-points(fit2, type = "l", col = "firebrick", lty = 2, lwd=0.2)
-
-acf(residuals(etth1_model2), lag.max=200)
+lapply(etth1_gridsearch, mean)
 
 # significant lag 1 and 2 components. Trying MA component
 # seasonal ma are along the edge of unit circle
@@ -283,12 +351,12 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
   train_prop = 0.8
   test_prop = 0.2
   train_size = (train_prop*length(input_ts))
-  # train = ts(input_ts[1:train_size], start=c(2016, first_hour_etth1), freq=24*365)
-  train = ts(input_ts[1:train_size], start=c(2004, first_hour_aeph), freq=24*365)
+  train = ts(input_ts[1:train_size], start=c(2016, first_hour_etth1), freq=24*365)
+  # train = ts(input_ts[1:train_size], start=c(2004, first_hour_aeph), freq=24*365)
   test_start = train_size+1
   # test = ts(input_ts[test_start:length(input_ts)], start=c(2017,25071), freq=24*365*4)
   # test = ts(input_ts[test_start:length(input_ts)], start=c(2013,1770), freq=24*365)
-  test = ts(input_ts[test_start:length(input_ts)], start=c(2016,658), freq=24*365)
+  test = ts(input_ts[test_start:length(input_ts)])#, start=c(2016,658), freq=24*365)
   # evaluated_model1 = arima(train, order = c(1,2,2), seasonal=list(order=c(0,1,1), period=24))
   # evaluated_model1 = arima(train, order = c(0,1,2), seasonal=list(order=c(0,1,2), period=24))
   if (include_trend_seasonality) {
@@ -307,13 +375,14 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
 
     processed_train = seasonality_data-seasonal_fit_$fitted
     
-    # evaluated_model1 = arima(processed_train, order = c(1,2,2), seasonal=list(order=c(0,1,1), period=24))
+    evaluated_model1 = arima(processed_train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
     # evaluated_model1 = arima(processed_train, order = c(0,1,1), seasonal=list(order=c(0,1,1), period=24))
     # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
-    evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
+    # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
   } else {
     # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
-    evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
+    # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
+     evaluated_model1 = arima(train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
   }
   
   
@@ -342,11 +411,11 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
   return()
 }
 
-# get_evaluation_on_ts(etth1.ts,original_input_ts=etth1.ts.original,include_trend_seasonality=F)
+get_evaluation_on_ts(etth1.ts,original_input_ts=etth1.ts.original,include_trend_seasonality=F)
 # get_evaluation_on_ts(etth2.ts,original_input_ts=etth2.ts.original, include_trend_seasonality=T)
 # get_evaluation_on_ts(ettm1.ts,original_input_ts=ettm1.ts.original, include_trend_seasonality=T)
 # get_evaluation_on_ts(weather.ts,original_input_ts=weather.ts.original, include_trend_seasonality=F)
-get_evaluation_on_ts(aeph.ts,original_input_ts=aeph.ts.original, include_trend_seasonality=T)
+# get_evaluation_on_ts(aeph.ts,original_input_ts=aeph.ts.original, include_trend_seasonality=T)
 
 ```
 
@@ -385,17 +454,17 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, include_trend_seasonality=F) 
         seasonal_fit_ = lm(seasonality_data ~ 1 + v1 + v2 + v3 + v4)
     
         processed_train = seasonality_data-seasonal_fit_$fitted
-        # evaluated_model1 = arima(processed_train, order = c(1,2,2), seasonal=list(order=c(0,1,1), period=24))
+        evaluated_model1 = arima(processed_train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
         # evaluated_model1 = arima(processed_train, order = c(0,1,1), seasonal=list(order=c(0,1,1), period=24))
         # evaluated_model1 = arima(processed_train, order = c(0,0,1), seasonal=list(order=c(0,1,0), period=4*12))
         # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
-        evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
+        # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
       } else {
-        # evaluated_model1 = arima(train, order = c(0,1,2), seasonal=list(order=c(0,1,2), period=24))
+        evaluated_model1 = arima(train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
         # evaluated_model1 = arima(train, order = c(1,2,2), seasonal=list(order=c(0,1,1), period=24))
         # evaluated_model1 = arima(train, order = c(0,0,1), seasonal=list(order=c(0,1,0), period=4*12))
         # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
-        evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
+        # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
       }
       pred_call = predict(evaluated_model1, n.ahead=pred_len)
       curr_pred = pred_call$pred
@@ -424,10 +493,10 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, include_trend_seasonality=F) 
 }
 
 # get_evaluation_on_ts(etth2.ts,include_trend_seasonality=T)
-# get_evaluation_on_ts(etth1.ts,include_trend_seasonality=F)
+get_evaluation_on_ts(etth1.ts,include_trend_seasonality=F)
 # get_evaluation_on_ts(ettm1.ts,include_trend_seasonality=T)
 # get_evaluation_on_ts(weather.ts,include_trend_seasonality=F)
-get_evaluation_on_ts(aeph.ts,include_trend_seasonality=F)
+# get_evaluation_on_ts(aeph.ts,include_trend_seasonality=F)
 
 ```
 
