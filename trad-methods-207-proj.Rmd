@@ -143,14 +143,21 @@ stationary.test(etth1.ts)
 
 
 # etth2
-acf(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=24), lag.max=200)
+acf(diff(diff(etth2.ts,lag=1), lag=1), lag.max=200)
+acf(diff(etth2.ts,lag=24), lag.max=200)
+# removes sufficient amount of structure.
+acf(diff(diff(diff(etth2.ts,lag=24))), lag.max=200)
 
 adf.test(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=24))
 stationary.test(etth2.ts)
 
 
 # ettm1
-acf(diff(ettm1.ts,lag=4*12), lag.max=200)
+acf(diff(diff(ettm1.ts,lag=4*12)), lag.max=200)
+
+acf(diff(ettm1.ts,lag=4), lag.max=200)
+
+acf(diff(diff(diff(ettm1.ts,lag=4))), lag.max=200)
 
 adf.test(ettm1.ts)
 stationary.test(ettm1.ts)
@@ -202,8 +209,6 @@ grid_search_cv = function(dataset, ar_range, ma_range, diff_range, periods, seas
       }
       train = non_oos[train_start:train_end]
       validation = non_oos[validation_start:validation_end]
-      start.time = Sys.time()
-      print("Starting inner loop.")
       for (ar_comp in ar_range) {
         for (ma_comp in ma_range) {
           for (diff in diff_range) {
@@ -242,58 +247,35 @@ grid_search_cv = function(dataset, ar_range, ma_range, diff_range, periods, seas
           }
         }
       }
-      end.time = Sys.time()
     }
   }
   return(results)
 }
 
 # limit prediction lengths to long term (2nd longest).
-etth1_gridsearch = grid_search_cv(etth1.ts, 0:2, 0:2, 1:2, periods=24, seasonal_ma_range=0:1,  
+etth1_gridsearch = grid_search_cv(etth1.ts, 0:2, 0:2, 1, periods=24, seasonal_ma_range=0:1,  
                seasonal_ar_range=0:0, pred_lens=c(336), n_folds=4, 
                non_oos_prop=0.8, first_year = 2016, first_val = first_hour_etth1, 
                dataset_freq = 24*365)
 
 lapply(etth1_gridsearch, mean)
 
-# significant lag 1 and 2 components. Trying MA component
-# seasonal ma are along the edge of unit circle
-etth1_model3 = arima(after_trend_seasonality_etth1-gam1$fitted.values, order = c(0,1,1), seasonal=list(order=c(0,1,1), period=24))
-plot(after_trend_seasonality_etth1-gam1$fitted.values)
-fit3 = after_trend_seasonality_etth1-gam1$fitted.values - residuals(etth1_model3)
-points(fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
+etth2_gridsearch = grid_search_cv(etth2.ts, 0:2, 0:2, 1:2, periods=24, seasonal_ma_range=0:1,  
+               seasonal_ar_range=0:0, pred_lens=c(336), n_folds=4, 
+               non_oos_prop=0.8, first_year = 2016, first_val = first_hour_etth1, 
+               dataset_freq = 24*365)
 
-acf(residuals(etth1_model3), lag.max=300)
-
-autoplot(etth1_model3)
-
-# ETTH2
-
-etth2_model1 = arima(etth2.ts, order = c(0,3,1))
-plot(etth2.ts)
-etth2_fit1 = etth2.ts - residuals(etth2_model1)
-points(etth2_fit1, type = "l", col = "lightblue", lty = 2, lwd=0.2)
-
-acf(residuals(etth2_model1), lag.max=200)
-
-# seasonal component every 24 time steps (every 24 hours).
-etth2_model2 = arima(etth2.ts, order = c(0,3,1), seasonal=list(order=c(0,1,0), period=24))
+lapply(etth2_gridsearch, mean)
 
 
-plot(etth2.ts)
-etth2_fit2 = etth2.ts - residuals(etth2_model2)
-points(etth2_fit2, type = "l", col = "firebrick", lty = 2, lwd=0.2)
+# diff restricted to 1 -> 2 appears to flare up autocorrelations at lower lags.
+ettm1_gridsearch = grid_search_cv(ettm1.ts, 0:2, 0:2, 1, periods=c(4,4*12), seasonal_ma_range=0:1,
+               seasonal_ar_range=0:1, pred_lens=c(288), n_folds=4, 
+               non_oos_prop=0.8, first_year = 2016, first_val = 4368, 
+               dataset_freq = 24*365*4)
 
-acf(residuals(etth2_model2), lag.max=200)
+lapply(ettm1_gridsearch, mean)
 
-# significant lag 1 and 2 components. Trying MA component
-# seasonal ma are along the edge of unit circle
-etth2_model3 = arima(etth2.ts, order = c(1,2,1), seasonal=list(order=c(0,1,1), period=24))
-plot(etth2.ts)
-etth2_fit3 = etth2.ts - residuals(etth2_model3)
-points(etth2_fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
-
-acf(residuals(etth2_model3), lag.max=300)
 
 # ETTM1
 
@@ -343,6 +325,11 @@ acf(residuals(aeph_model3), lag.max=300)
 
 
 ```{r}
+
+# ETTh1: order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24)
+# ETTh2: order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24)
+
+
 # Evaluation
 # Coefficients from SARIMA may be close to extremes of the unit circle.
 # Train/Validation/Test Split
@@ -375,14 +362,16 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
 
     processed_train = seasonality_data-seasonal_fit_$fitted
     
-    evaluated_model1 = arima(processed_train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
+    # evaluated_model1 = arima(processed_train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
     # evaluated_model1 = arima(processed_train, order = c(0,1,1), seasonal=list(order=c(0,1,1), period=24))
+    evaluated_model1 = arima(processed_train, order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24))
     # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
     # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
   } else {
+    evaluated_model1 = arima(train, order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24))
     # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
     # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
-     evaluated_model1 = arima(train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
+     # evaluated_model1 = arima(train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
   }
   
   
@@ -411,8 +400,8 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
   return()
 }
 
-get_evaluation_on_ts(etth1.ts,original_input_ts=etth1.ts.original,include_trend_seasonality=F)
-# get_evaluation_on_ts(etth2.ts,original_input_ts=etth2.ts.original, include_trend_seasonality=T)
+# get_evaluation_on_ts(etth1.ts,original_input_ts=etth1.ts.original,include_trend_seasonality=F)
+get_evaluation_on_ts(etth2.ts,original_input_ts=etth2.ts.original, include_trend_seasonality=F)
 # get_evaluation_on_ts(ettm1.ts,original_input_ts=ettm1.ts.original, include_trend_seasonality=T)
 # get_evaluation_on_ts(weather.ts,original_input_ts=weather.ts.original, include_trend_seasonality=F)
 # get_evaluation_on_ts(aeph.ts,original_input_ts=aeph.ts.original, include_trend_seasonality=T)
