@@ -18,7 +18,7 @@ library(bayesforecast)
 ## Two Time Series Plots of Electricity and Weather
 
 ```{r}
-par(mfrow=c(2,2))
+# par(mfrow=c(2,2))
 etth1 = read.csv("./data/ETTh1.csv")
 etth2 = read.csv("./data/ETTh2.csv")
 ettm1 = read.csv("./data/ETTm1.csv")
@@ -50,11 +50,11 @@ first_hour_aeph = 24*(as.Date("2004-12-31 01:00:00")-as.Date("2004-1-1 00:00:00"
 aeph.ts.original = ts(data=aeph$AEP_MW, start=c(2004, first_hour_aeph), freq=24*365)
 aeph.ts = (aeph.ts.original-mean(aeph.ts.original))/sd(aeph.ts.original)
 
-plot(etth1.ts, main="ETTH1 Electricity Oil Temperature")
-plot(etth2.ts, main="ETTH2 Electricity Oil Temperature")
-plot(ettm1.ts, main="ETTM1 Electricity Oil Temperature")
-plot(weather.ts, main="Weather Wet Bulb Temperature (Celsius)")
-plot(aeph.ts, main="AEPh Megawatt Energy Consumption",ylab="Normalized Megawatt Energy Consumption")
+plot(etth1.ts.original, main="ETTH1 Electricity Oil Temperature", ylab="Oil Temperature (Celsius)")
+plot(etth2.ts.original, main="ETTH2 Electricity Oil Temperature", ylab="Oil Temperature (Celsius)")
+plot(ettm1.ts.original, main="ETTM1 Electricity Oil Temperature", ylab="Oil Temperature (Celsius)")
+plot(weather.ts.original, main="Weather Wet Bulb Temperature (Celsius)", ylab="Wet Bulb Temperature (Celsius)")
+plot(aeph.ts.original, main="AEPh Megawatt Energy Consumption",ylab="Megawatt Energy Consumption")
 ```
 
 ## Autocorrelation of current time series
@@ -78,7 +78,6 @@ acf(aeph.ts, lag.max=2000)
 ```
 
 ```{r}
-ettm1.ts
 gen_plots = function(dataset=etth1.ts) {
   par(mfrow=c(2,4))
   etth1_time = time(dataset)
@@ -216,10 +215,19 @@ grid_search_cv = function(dataset, ar_range, ma_range, diff_range, periods, seas
             for (curr_period in periods) {
               for (seasonal_ma in seasonal_ma_range) {
                 for (seasonal_ar in seasonal_ar_range) {
-                  
-                  temp_model = arima(train, order = c(ar_comp,diff,ma_comp),
+                  result <- tryCatch({
+                    temp_model = arima(train, order = c(ar_comp,diff,ma_comp),
                                      seasonal=list(order=c(seasonal_ar,1,seasonal_ma), 
                                                    period=curr_period))
+                      list(success = TRUE, temp_model = temp_model)
+                    }, error = function(e) {
+                      message("ARIMA(", paste(ar_comp,diff,ma_comp, collapse = ","), ") failed: ", e$message)
+                      list(success = FALSE, temp_model = NULL)
+                    })
+                  if (!result$success) {
+                    next
+                  }
+                  
                   pred_call = predict(temp_model, n.ahead=pred_len)
                   curr_pred = pred_call$pred
                   mse = mean( (validation[1:pred_len]-curr_pred)^2 )
@@ -268,23 +276,14 @@ etth2_gridsearch = grid_search_cv(etth2.ts, 0:2, 0:2, 1:2, periods=24, seasonal_
 lapply(etth2_gridsearch, mean)
 
 
-# diff restricted to 1 -> 2 appears to flare up autocorrelations at lower lags.
-ettm1_gridsearch = grid_search_cv(ettm1.ts, 0:2, 0:2, 1, periods=c(4,4*12), seasonal_ma_range=0:1,
+# diff restricted to 0 -> 2 appears to flare up autocorrelations at lower lags.
+ettm1_gridsearch = grid_search_cv(ettm1.ts, 0:2, 0:2, 0, periods=c(4,4*12), seasonal_ma_range=0:1,
                seasonal_ar_range=0:1, pred_lens=c(288), n_folds=4, 
                non_oos_prop=0.8, first_year = 2016, first_val = 4368, 
                dataset_freq = 24*365*4)
 
 lapply(ettm1_gridsearch, mean)
 
-
-# ETTM1
-
-ettm1_model1 = arima(ettm1.ts, order = c(0,1,1))
-plot(ettm1.ts)
-ettm1_fit1 = ettm1.ts - residuals(ettm1_model1)
-points(ettm1_fit1, type = "l", col = "lightblue", lty = 2, lwd=0.2)
-
-acf(residuals(ettm1_model1), lag.max=200)
 
 # seasonal component every 24 time steps (every 24 hours).
 ettm1_model2 = arima(ettm1.ts, order = c(0,1,1), seasonal=list(order=c(0,1,0), period=4))
@@ -338,7 +337,7 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
   train_prop = 0.8
   test_prop = 0.2
   train_size = (train_prop*length(input_ts))
-  train = ts(input_ts[1:train_size], start=c(2016, first_hour_etth1), freq=24*365)
+  train = ts(input_ts[1:train_size], start=c(2016, first_hour_etth1), freq=24*365*4)
   # train = ts(input_ts[1:train_size], start=c(2004, first_hour_aeph), freq=24*365)
   test_start = train_size+1
   # test = ts(input_ts[test_start:length(input_ts)], start=c(2017,25071), freq=24*365*4)
@@ -364,14 +363,16 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
     
     # evaluated_model1 = arima(processed_train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
     # evaluated_model1 = arima(processed_train, order = c(0,1,1), seasonal=list(order=c(0,1,1), period=24))
-    evaluated_model1 = arima(processed_train, order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24))
+    # evaluated_model1 = arima(processed_train, order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24))
+    evaluated_model1 = arima(processed_train, order=c(1,1,2), seasonal=list(order=c(1,1,1), period=4*12) )
     # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
     # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
   } else {
-    evaluated_model1 = arima(train, order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24))
+    # evaluated_model1 = arima(train, order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24))
     # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
     # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
-     # evaluated_model1 = arima(train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
+    # evaluated_model1 = arima(train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
+    evaluated_model1 = arima(train, order=c(1,1,2), seasonal=list(order=c(1,1,1), period=4*12) )
   }
   
   
@@ -393,7 +394,6 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
       curr_pred = curr_pred + reg1_preds+seasonal_preds
     }
     curr_se = pred_call$se
-    print(curr_pred)
     plot(1:pred_len, test[1:pred_len]*sd(original_input_ts)+mean(original_input_ts),type="l",xlab="Time Steps", ylab="Megawatt Energy Consumption")
     points(1:pred_len, curr_pred*sd(original_input_ts)+mean(original_input_ts),type="l",col="darkblue")
   }
@@ -401,8 +401,8 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
 }
 
 # get_evaluation_on_ts(etth1.ts,original_input_ts=etth1.ts.original,include_trend_seasonality=F)
-get_evaluation_on_ts(etth2.ts,original_input_ts=etth2.ts.original, include_trend_seasonality=F)
-# get_evaluation_on_ts(ettm1.ts,original_input_ts=ettm1.ts.original, include_trend_seasonality=T)
+# get_evaluation_on_ts(etth2.ts,original_input_ts=etth2.ts.original, include_trend_seasonality=F)
+get_evaluation_on_ts(ettm1.ts,original_input_ts=ettm1.ts.original, include_trend_seasonality=F)
 # get_evaluation_on_ts(weather.ts,original_input_ts=weather.ts.original, include_trend_seasonality=F)
 # get_evaluation_on_ts(aeph.ts,original_input_ts=aeph.ts.original, include_trend_seasonality=T)
 
