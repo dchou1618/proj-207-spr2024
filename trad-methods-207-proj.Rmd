@@ -22,9 +22,9 @@ library(bayesforecast)
 etth1 = read.csv("./data/ETTh1.csv")
 etth2 = read.csv("./data/ETTh2.csv")
 ettm1 = read.csv("./data/ETTm1.csv")
-tail(etth1)
 weather = read.csv("./data/WTH.csv")
 aeph = read.csv("./data/AEP_hourly.csv")
+
 
 # univariate time series
 # https://stackoverflow.com/questions/33782218/how-to-create-a-time-series-of-hourly-data
@@ -63,35 +63,28 @@ plot(aeph.ts.original, main="AEPh Megawatt Energy Consumption",ylab="Megawatt En
 # original data can't be operated on directly due to slow decrease in acf across lags
 par(mfrow=c(2,2))
 # first diagnose the autocorrelation of the existing time series
-
-# pacf(etth1.ts, lag.max=200)
 acf(etth1.ts, lag.max=200)
-
 acf(etth2.ts, lag.max=200)
-
 acf(ettm1.ts, lag.max=200)
-
-# pacf(weather.ts)
 acf(weather.ts, lag.max=200)
-
 acf(aeph.ts, lag.max=2000)
 ```
 
 ```{r}
-gen_plots = function(dataset=etth1.ts) {
+gen_plots = function(dataset=etth1.ts, freq=24*365) {
   par(mfrow=c(2,4))
-  etth1_time = time(dataset)
-  reg1 = lm(dataset~etth1_time+I(etth1_time^3))
+  curr_time = time(dataset)
+  reg1 = lm(dataset~curr_time+I(curr_time^3))
   
   plot(dataset)
-  points(etth1_time, predict.lm(reg1),type='l',col='blue')
+  points(curr_time, predict.lm(reg1),type='l',col='blue')
   
-  seasonality_etth1 = dataset-predict.lm(reg1)
+  seasonality = dataset-predict.lm(reg1)
   
   f1 = 1
   f2 = 3
   f3 = 12
-  d = 24*365
+  d = freq
   v1 = cos(2*base::pi*f1*(1:length(dataset))/d)
   v2 = sin(2*base::pi*f1*(1:length(dataset))/d)
   v3 = cos(2*base::pi*f2*(1:length(dataset))/d)
@@ -99,26 +92,19 @@ gen_plots = function(dataset=etth1.ts) {
   v5 = cos(2*base::pi*f3*(1:length(dataset))/d)
   v6 = sin(2*base::pi*f3*(1:length(dataset))/d)
   
-  seasonal_fit1 = lm(seasonality_etth1 ~ 1 + v1 + v2 + v3 + v4)
-  plot(1:length(dataset), seasonality_etth1, type="l")
+  seasonal_fit1 = lm(seasonality ~ 1 + v1 + v2 + v3 + v4)
+  plot(1:length(dataset), seasonality, type="l")
   points(1:length(dataset), seasonal_fit1$fitted, type = "l", col = "firebrick",lwd=3)
-  
-  coef(seasonal_fit1)
-  
-  after_trend_seasonality_etth1 = seasonality_etth1-seasonal_fit1$fitted
-  
-  
-  gam1 = gam(after_trend_seasonality_etth1 ~ s(time(dataset)))
-  
-  plot(1:length(dataset), after_trend_seasonality_etth1, type="l")
-  points(1:length(dataset), gam1$fitted.values, type = "l", col = "firebrick",lwd=3)
-  plot(after_trend_seasonality_etth1-gam1$fitted.values)
-  
-  
-  acf(after_trend_seasonality_etth1-gam1$fitted.values,lag.max=200)
-  
+  after_trend_seasonality_dataset = seasonality-seasonal_fit1$fitted
+  acf(after_trend_seasonality_dataset,lag.max=200)
+  kpss.test(after_trend_seasonality_dataset)
+  return(after_trend_seasonality_dataset)
 }
-gen_plots(aeph.ts)
+etth1.ts.residuals = gen_plots(etth1.ts)
+etth2.ts.residuals = gen_plots(etth2.ts)
+ettm1.ts.residuals = gen_plots(ettm1.ts, freq=24*365*4)
+weather.ts.residuals = gen_plots(weather.ts)
+aeph.ts.residuals = gen_plots(aeph.ts)
 
 ```
 
@@ -131,48 +117,86 @@ gen_plots(aeph.ts)
 ```{r}
 # etth1
 acf(diff(diff(etth1.ts,lag=1), lag=1), lag.max=200)
-
 acf(diff(etth1.ts,lag=24), lag.max=200)
+acf(diff(diff(etth1.ts,lag=24)), lag.max=200)
 acf(diff(etth1.ts,lag=24*2), lag.max=200)
 acf(diff(etth1.ts,lag=4), lag.max=200)
 
-adf.test(etth1.ts)
-adf.test(diff(etth1.ts))
-stationary.test(etth1.ts)
+kpss.test(diff(diff(etth1.ts), lag=24))
+adf.test(diff(etth1.ts,lag=24))
 
 
 # etth2
 acf(diff(diff(etth2.ts,lag=1), lag=1), lag.max=200)
 acf(diff(etth2.ts,lag=24), lag.max=200)
-# removes sufficient amount of structure.
-acf(diff(diff(diff(etth2.ts,lag=24))), lag.max=200)
+acf(diff(diff(etth2.ts,lag=24)), lag.max=200)
 
-adf.test(diff(diff(diff(etth2.ts,lag=1), lag=1), lag=24))
-stationary.test(etth2.ts)
-
+adf.test(diff(diff(etth2.ts,lag=24)))
+kpss.test(diff(diff(etth2.ts,lag=24)))
 
 # ettm1
 acf(diff(diff(ettm1.ts,lag=4*12)), lag.max=200)
-
 acf(diff(ettm1.ts,lag=4), lag.max=200)
+acf(diff(ettm1.ts,lag=4*12), lag.max=200)
 
-acf(diff(diff(diff(ettm1.ts,lag=4))), lag.max=200)
-
-adf.test(ettm1.ts)
-stationary.test(ettm1.ts)
+# we consider the longer periods in ettm1 as the 
+# resulting time series is stationary and
+# may be able to capture patterns
+# and variance of the data better.
+adf.test(diff(ettm1.ts, lag=4*12))
+kpss.test(diff(ettm1.ts, lag=4*12))
 
 # Weather 
-acf(diff(diff(weather.ts),lag=1),lag.max=200)
-
-adf.test(weather.ts)
-stationary.test(weather.ts)
+acf(diff(diff(weather.ts),lag=24),lag.max=200)
+kpss.test(diff(weather.ts, lag=24))
+adf.test(diff(weather.ts, lag=24))
 
 # Aeph
-
 acf(diff(aeph.ts,lag=24), lag.max=200)
+acf(diff(aeph.ts,lag=24*2), lag.max=200)
 
-adf.test(aeph.ts)
-stationary.test(aeph.ts)
+kpss.test(diff(aeph.ts, lag=24*2))
+kpss.test(diff(aeph.ts, lag=24))
+kpss.test(aeph.ts)
+
+adf.test(diff(aeph.ts, lag=24*2))
+adf.test(diff(aeph.ts, lag=24))
+
+# on residual datasets
+
+# etth1.ts
+acf(diff(diff(etth1.ts), lag=24),lag.max=200)
+acf(diff(etth1.ts.residuals),lag.max=200)
+
+kpss.test(diff(diff(etth1.ts.residuals), lag=24))
+adf.test(diff(etth1.ts.residuals,lag=24))
+
+# etth2.ts
+acf(diff(diff(etth2.ts.residuals,lag=24)), lag.max=200)
+
+adf.test(diff(diff(etth2.ts.residuals,lag=24)))
+kpss.test(diff(diff(etth2.ts.residuals,lag=24)))
+
+# ettm1.ts
+acf(diff(ettm1.ts.residuals,lag=4*12), lag.max=200)
+
+# we consider the longer periods in ettm1 as the 
+# resulting time series is stationary and
+# may be able to capture patterns
+# and variance of the data better.
+adf.test(diff(ettm1.ts.residuals, lag=4*12))
+kpss.test(diff(ettm1.ts.residuals, lag=4*12))
+
+# weather
+acf(diff(weather.ts.residuals,lag=24),lag.max=200)
+kpss.test(diff(weather.ts.residuals, lag=24))
+adf.test(diff(weather.ts.residuals, lag=24))
+
+# aeph
+acf(diff(aeph.ts.residuals,lag=24*2), lag.max=200)
+kpss.test(diff(aeph.ts.residuals, lag=24*2))
+adf.test(diff(aeph.ts.residuals, lag=24*2))
+
 ```
 
 ## Trying different models based on preliminary plots
@@ -180,6 +204,7 @@ stationary.test(aeph.ts)
 ```{r}
 # ETTH1
 # Ideal to difference twice to remove trend. Estimates using CSS-ML
+
 grid_search_cv = function(dataset, ar_range, ma_range, diff_range, periods, seasonal_ma_range, 
                           seasonal_ar_range, pred_lens, n_folds, non_oos_prop,
                           first_year, first_val, dataset_freq) {
@@ -257,6 +282,8 @@ grid_search_cv = function(dataset, ar_range, ma_range, diff_range, periods, seas
       }
     }
   }
+  mean_results = lapply(results, mean)
+  print(mean_results[which.min(mean_results)])
   return(results)
 }
 
@@ -266,14 +293,14 @@ etth1_gridsearch = grid_search_cv(etth1.ts, 0:2, 0:2, 1, periods=24, seasonal_ma
                non_oos_prop=0.8, first_year = 2016, first_val = first_hour_etth1, 
                dataset_freq = 24*365)
 
-lapply(etth1_gridsearch, mean)
+lapply(etth1_gridsearch, mean)[which.min(lapply(etth1_gridsearch, mean))]
 
 etth2_gridsearch = grid_search_cv(etth2.ts, 0:2, 0:2, 1:2, periods=24, seasonal_ma_range=0:1,  
-               seasonal_ar_range=0:0, pred_lens=c(336), n_folds=4, 
+               seasonal_ar_range=0:0, pred_lens=336, n_folds=4, 
                non_oos_prop=0.8, first_year = 2016, first_val = first_hour_etth1, 
                dataset_freq = 24*365)
 
-lapply(etth2_gridsearch, mean)
+lapply(etth2_gridsearch, mean)[which.min(lapply(etth2_gridsearch, mean))]
 
 
 # diff restricted to 0 -> 2 appears to flare up autocorrelations at lower lags.
@@ -282,43 +309,66 @@ ettm1_gridsearch = grid_search_cv(ettm1.ts, 0:2, 0:2, 0, periods=c(4,4*12), seas
                non_oos_prop=0.8, first_year = 2016, first_val = 4368, 
                dataset_freq = 24*365*4)
 
-lapply(ettm1_gridsearch, mean)
+lapply(ettm1_gridsearch, mean)[which.min(lapply(ettm1_gridsearch, mean))]
 
 
-# seasonal component every 24 time steps (every 24 hours).
-ettm1_model2 = arima(ettm1.ts, order = c(0,1,1), seasonal=list(order=c(0,1,0), period=4))
+weather_gridsearch = grid_search_cv(weather.ts, 0:1, 0:1, 0, periods=c(24), 
+                                    seasonal_ma_range=0:1,
+               seasonal_ar_range=0:1, pred_lens=c(336), n_folds=4, 
+               non_oos_prop=0.8, first_year = 2010, first_val = 0, 
+               dataset_freq = 24*365)
 
-plot(ettm1.ts)
-ettm1_fit2 = ettm1.ts - residuals(ettm1_model2)
-points(ettm1_fit2, type = "l", col = "firebrick", lty = 2, lwd=0.2)
-
-acf(residuals(ettm1_model2), lag.max=200)
-
-# significant lag 1 and 2 components. Trying MA component
-# seasonal ma are along the edge of unit circle
-ettm1_model3 = arima(ettm1.ts, order = c(1,0,1), seasonal=list(order=c(0,1,1), period=4*12))
-plot(ettm1.ts)
-ettm1_fit3 = ettm1.ts - residuals(ettm1_model3)
-points(ettm1_fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
-
-acf(residuals(ettm1_model3), lag.max=300)
+lapply(weather_gridsearch, mean)[which.min(lapply(weather_gridsearch, mean))]
 
 
-weather_model3 = arima(weather.ts, order = c(0,1,1), seasonal=list(order=c(0,1,0), period=24))
-plot(weather.ts)
-weather_fit3 = weather.ts - residuals(weather_model3)
-points(weather_fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
+aeph_gridsearch = grid_search_cv(aeph.ts, 0:2, 0:2, 0, periods=c(24*2), 
+                                    seasonal_ma_range=0:1,
+               seasonal_ar_range=0:1, pred_lens=288, n_folds=4, 
+               non_oos_prop=0.8, first_year = 2004, first_val = first_hour_aeph, 
+               dataset_freq = 24*365)
 
-acf(residuals(weather_model3), lag.max=300)
+lapply(aeph_gridsearch, mean)[which.min(lapply(aeph_gridsearch, mean))]
+
+# run on residuals 
+etth1.residuals_gridsearch = grid_search_cv(etth1.ts.residuals, 0:2, 0:2, 1, periods=24, seasonal_ma_range=0:1,  
+               seasonal_ar_range=0:0, pred_lens=c(336), n_folds=4, 
+               non_oos_prop=0.8, first_year = 2016, first_val = first_hour_etth1, 
+               dataset_freq = 24*365)
+
+which.min(lapply(etth1.residuals_gridsearch, mean))
+
+etth2.residuals_gridsearch = grid_search_cv(etth2.ts.residuals, 0:2, 0:2, 1, periods=24, seasonal_ma_range=0:1,  
+               seasonal_ar_range=0:0, pred_lens=c(336), n_folds=4, 
+               non_oos_prop=0.8, first_year = 2016, first_val = first_hour_etth1, 
+               dataset_freq = 24*365)
+
+which.min(lapply(etth2.residuals_gridsearch, mean))
+
+ettm1.residuals_gridsearch = grid_search_cv(ettm1.ts.residuals, 0:2, 0:2, 0, periods=4*12, seasonal_ma_range=0:1,  
+               seasonal_ar_range=0:0, pred_lens=c(288), n_folds=4, 
+               non_oos_prop=0.8, first_year = 2016, first_val = 4368, 
+               dataset_freq = 24*365*4)
+
+lapply(ettm1.residuals_gridsearch, mean)[which.min(lapply(ettm1.residuals_gridsearch, mean))]
+
+weather.residuals_gridsearch = grid_search_cv(weather.ts.residuals, 0:1, 0:1, 0, periods=c(24), 
+                                    seasonal_ma_range=0:1,
+               seasonal_ar_range=0:1, pred_lens=c(336), n_folds=4, 
+               non_oos_prop=0.8, first_year = 2010, first_val = 0, 
+               dataset_freq = 24*365)
+which.min(lapply(weather.residuals_gridsearch, mean))
+lapply(weather.residuals_gridsearch, mean)[which.min(lapply(weather.residuals_gridsearch, mean))]
 
 
-aeph_model3 = arima(aeph.ts, order = c(1,1,1), seasonal=list(order=c(0,1,0), period=24))
-plot(aeph.ts)
-aeph_fit3 = aeph.ts - residuals(aeph_model3)
-points(aeph_fit3, type = "l", col = "lightgreen", lty = 2, lwd=0.2)
+aeph.residuals_gridsearch = grid_search_cv(aeph.ts.residuals, 0:1, 0:1, 0, periods=c(24*2), 
+                                    seasonal_ma_range=0:1,
+               seasonal_ar_range=0:1, pred_lens=c(288), n_folds=4, 
+               non_oos_prop=0.8, first_year = 2004, first_val = first_hour_aeph, 
+               dataset_freq = 24*365)
 
-acf(residuals(aeph_model3), lag.max=300)
-
+which.min(lapply(aeph.residuals_gridsearch, mean))
+# lapply(aeph.residuals_gridsearch, mean)
+lapply(aeph.residuals_gridsearch, mean)[which.min(lapply(aeph.residuals_gridsearch, mean))]
 
 ```
 
@@ -327,22 +377,40 @@ acf(residuals(aeph_model3), lag.max=300)
 
 # ETTh1: order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24)
 # ETTh2: order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24)
+# ETTm1: order = c(0,0,2), seasonal=list(order=c(0,1,1), period=24*2)
+# Weather: order = c(0,0,2), seasonal=list(order=c(0,1,1), period=24)
+# AEPh: order = c(2,0,2), seasonal=list(order=c(1,1,1), period=24*2)
 
+# residuals: 
+# ETTh1: order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24)
+# ETTh2: order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24)
+# ETTm1: order = c(0,0,2), seasonal=list(order=c(0,1,1), period=24*2)
+# Weather: order = c(2,0,1), seasonal=list(order=c(0,1,1), period=24)
+# AEPh: order = c(2,0,2), seasonal=list(order=c(1,1,1), period=24*2)
 
 # Evaluation
 # Coefficients from SARIMA may be close to extremes of the unit circle.
 # Train/Validation/Test Split
-get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.original,include_trend_seasonality=F) {
+get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.original,
+                                include_trend_seasonality=F,freq=24*365, 
+                                first_year=2016, 
+                                first_val=first_hour_etth1, test_first_year=2018,
+                                test_first_val=784, ylabel="",
+                                prediction_length = c(24, 48, 168, 336, 720),
+                                order_params = c(1,1,2),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(24)) {
   # get validation middle 0.2 next time
   train_prop = 0.8
   test_prop = 0.2
   train_size = (train_prop*length(input_ts))
-  train = ts(input_ts[1:train_size], start=c(2016, first_hour_etth1), freq=24*365*4)
+  train = ts(input_ts[1:train_size], start=c(first_year, first_val), freq=freq)
   # train = ts(input_ts[1:train_size], start=c(2004, first_hour_aeph), freq=24*365)
   test_start = train_size+1
   # test = ts(input_ts[test_start:length(input_ts)], start=c(2017,25071), freq=24*365*4)
   # test = ts(input_ts[test_start:length(input_ts)], start=c(2013,1770), freq=24*365)
-  test = ts(input_ts[test_start:length(input_ts)])#, start=c(2016,658), freq=24*365)
+  test = ts(input_ts[test_start:length(input_ts)], 
+            start=c(test_first_year,test_first_val), freq=freq)
   # evaluated_model1 = arima(train, order = c(1,2,2), seasonal=list(order=c(0,1,1), period=24))
   # evaluated_model1 = arima(train, order = c(0,1,2), seasonal=list(order=c(0,1,2), period=24))
   if (include_trend_seasonality) {
@@ -351,34 +419,32 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
     seasonality_data = train-predict.lm(reg1_)
     
     f1 = 1
-    f2 = 12
-    d = 24*365
+    f2 = 3
+    f3 = 12
+    d = freq
     v1 = cos(2*base::pi*f1*(1:train_size)/d)
     v2 = sin(2*base::pi*f1*(1:train_size)/d)
     v3 = cos(2*base::pi*f2*(1:train_size)/d)
     v4 = sin(2*base::pi*f2*(1:train_size)/d)
-    seasonal_fit_ = lm(seasonality_data ~ 1 + v1 + v2 + v3 + v4)
+    v5 = cos(2*base::pi*f3*(1:train_size)/d)
+    v6 = sin(2*base::pi*f3*(1:train_size)/d)
+    
+    seasonal_fit_ = lm(seasonality_data ~ 1 + v1 + v2 + v3 + v4 + v5 + v6)
 
     processed_train = seasonality_data-seasonal_fit_$fitted
-    
     # evaluated_model1 = arima(processed_train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
     # evaluated_model1 = arima(processed_train, order = c(0,1,1), seasonal=list(order=c(0,1,1), period=24))
     # evaluated_model1 = arima(processed_train, order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24))
-    evaluated_model1 = arima(processed_train, order=c(1,1,2), seasonal=list(order=c(1,1,1), period=4*12) )
-    # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
-    # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
+    # evaluated_model1 = arima(processed_train, order=c(1,1,2), seasonal=list(order=c(1,1,1), period=4*12) )
+    evaluated_model1 = arima(processed_train, order = order_params, seasonal=list(order=seasonal_order, period=seasonal_period))
   } else {
-    # evaluated_model1 = arima(train, order = c(2,1,1), seasonal=list(order=c(0,1,1), period=24))
-    # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
-    # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
-    # evaluated_model1 = arima(train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
-    evaluated_model1 = arima(train, order=c(1,1,2), seasonal=list(order=c(1,1,1), period=4*12) )
+    evaluated_model1 = arima(train, order = order_params, seasonal=list(order=seasonal_order, period=seasonal_period))
   }
   
   
   # may add as a parameter
   res_lst = list()
-  for (pred_len in c(24, 48, 96, 288, 672)) {
+  for (pred_len in prediction_length) {
     pred_call = predict(evaluated_model1, n.ahead=pred_len)
     curr_pred = pred_call$pred
     if (include_trend_seasonality) {
@@ -388,72 +454,174 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, original_input_ts=etth1.ts.or
       v2 = sin(2*base::pi*f1*(test_start:(test_start+pred_len-1))/d)
       v3 = cos(2*base::pi*f2*(test_start:(test_start+pred_len-1))/d)
       v4 = sin(2*base::pi*f2*(test_start:(test_start+pred_len-1))/d)
+      v5 = cos(2*base::pi*f3*(test_start:(test_start+pred_len-1))/d)
+      v6 = sin(2*base::pi*f3*(test_start:(test_start+pred_len-1))/d)
+    
       seasonal_preds = coef(seasonal_fit_)[[1]]+coef(seasonal_fit_)[[2]]*v1+
                        coef(seasonal_fit_)[[3]]*v2+coef(seasonal_fit_)[[4]]*v3+
-                       coef(seasonal_fit_)[[5]]*v4
+                       coef(seasonal_fit_)[[5]]*v4+coef(seasonal_fit_)[[6]]*v5+
+                       coef(seasonal_fit_)[[7]]*v6
       curr_pred = curr_pred + reg1_preds+seasonal_preds
     }
-    curr_se = pred_call$se
-    plot(1:pred_len, test[1:pred_len]*sd(original_input_ts)+mean(original_input_ts),type="l",xlab="Time Steps", ylab="Megawatt Energy Consumption")
+    # curr_se = pred_call$se
+    plot(1:pred_len, test[1:pred_len]*sd(original_input_ts)+mean(original_input_ts),type="l",xlab="Time Steps",
+         ylab=ylabel)
     points(1:pred_len, curr_pred*sd(original_input_ts)+mean(original_input_ts),type="l",col="darkblue")
   }
   return()
 }
 
-# get_evaluation_on_ts(etth1.ts,original_input_ts=etth1.ts.original,include_trend_seasonality=F)
-# get_evaluation_on_ts(etth2.ts,original_input_ts=etth2.ts.original, include_trend_seasonality=F)
-get_evaluation_on_ts(ettm1.ts,original_input_ts=ettm1.ts.original, include_trend_seasonality=F)
-# get_evaluation_on_ts(weather.ts,original_input_ts=weather.ts.original, include_trend_seasonality=F)
-# get_evaluation_on_ts(aeph.ts,original_input_ts=aeph.ts.original, include_trend_seasonality=T)
+
+
+# seasonality
+get_evaluation_on_ts(etth1.ts,original_input_ts=etth1.ts.original,include_trend_seasonality=T,
+                     first_year=2016, first_val=first_hour_etth1,
+                     test_first_year=2018,
+                     test_first_val=784,ylabel="Transformer Oil Temperature (Celsius)",
+                     order_params = c(2,1,1),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(24))
+
+get_evaluation_on_ts(etth1.ts,original_input_ts=etth1.ts.original,include_trend_seasonality=F,
+                     first_year=2016, first_val=first_hour_etth1,
+                     test_first_year=2018,
+                     test_first_val=784,ylabel="Transformer Oil Temperature (Celsius)",
+                     order_params = c(2,1,1),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(24))
+
+
+get_evaluation_on_ts(etth2.ts,original_input_ts=etth2.ts.original,include_trend_seasonality=T,
+                     first_year=2016, first_val=first_hour_etth1,
+                     test_first_year=2018,
+                     test_first_val=784,ylabel="Transformer Oil Temperature (Celsius)",
+                     order_params = c(2,1,1),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(24))
+
+get_evaluation_on_ts(etth2.ts,original_input_ts=etth2.ts.original,include_trend_seasonality=F,
+                     first_year=2016, first_val=first_hour_etth1,
+                     test_first_year=2018,
+                     test_first_val=784,ylabel="Transformer Oil Temperature (Celsius)",
+                     order_params = c(2,1,1),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(24))
+###########
+get_evaluation_on_ts(ettm1.ts,original_input_ts=ettm1.ts.original,include_trend_seasonality=T,
+                     freq=24*365*4,
+                     first_year=2016, first_val=first_hour_etth1,
+                     test_first_year=2017,
+                     test_first_val=25072,
+                     ylabel="Transformer Oil Temperature (Celsius)",
+                     prediction_length=c(24, 48, 96, 288, 672),
+                     order_params = c(0,0,2),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(4*12))
+
+get_evaluation_on_ts(ettm1.ts,original_input_ts=ettm1.ts.original,include_trend_seasonality=F,
+                     freq=24*365*4,
+                     first_year=2016, first_val=first_hour_etth1,
+                     test_first_year=2017,
+                     test_first_val=25072,
+                     ylabel="Transformer Oil Temperature (Celsius)",
+                     prediction_length=c(24, 48, 96, 288, 672),
+                     order_params = c(0,0,2),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(4*12))
+#####################
+# get_evaluation_on_ts(weather.ts,original_input_ts=weather.ts.original, include_trend_seasonality=F,
+#                      first_year=2010, first_val=0,
+#                      test_first_year=2014, 
+#                      test_first_val=25,
+#                      ylabel="Wet Bulb Temperature (Celsius)",
+#                      order_params = c(1,0,1),
+#                                 seasonal_order=c(0,1,1),
+#                                 seasonal_period=c(24))
+
+get_evaluation_on_ts(weather.ts,original_input_ts=weather.ts.original, include_trend_seasonality=T,
+                     first_year=2010, first_val=0,
+                     test_first_year=2014, 
+                     test_first_val=25,
+                     ylabel="Wet Bulb Temperature (Celsius)",
+                     order_params = c(1,0,1),
+                                seasonal_order=c(1,1,1),
+                                seasonal_period=c(24))
+
+get_evaluation_on_ts(weather.ts,original_input_ts=weather.ts.original, include_trend_seasonality=F,
+                     first_year=2010, first_val=0,
+                     test_first_year=2014, 
+                     test_first_val=25,
+                     ylabel="Wet Bulb Temperature (Celsius)",
+                     order_params = c(0,0,1),
+                                seasonal_order=c(1,1,1),
+                                seasonal_period=c(24))
+
+
+get_evaluation_on_ts(aeph.ts,original_input_ts=aeph.ts.original, include_trend_seasonality=T,
+                     first_year=2004, first_val=first_hour_aeph,
+                     test_first_year=2016, 
+                     test_first_val=658,
+                     ylabel="Megawatt Energy Consumption",
+                     prediction_length=c(24, 48, 96, 288, 672),
+                     order_params = c(1,0,1),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(24*2))
+
+get_evaluation_on_ts(aeph.ts,original_input_ts=aeph.ts.original, include_trend_seasonality=F,
+                     first_year=2004, first_val=first_hour_aeph,
+                     test_first_year=2016, 
+                     test_first_val=658,
+                     ylabel="Megawatt Energy Consumption",
+                     prediction_length=c(24, 48, 96, 288, 672),
+                     order_params = c(1,0,1),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(24*2))
 
 ```
 
 ```{r}
-get_evaluation_on_ts = function(input_ts=etth1.ts, include_trend_seasonality=F) {
+get_evaluation_on_ts2 = function(input_ts=etth1.ts, include_trend_seasonality=F, freq=24*365, prediction_lengths=c(24,48,168,336,720),
+                                first_year=2016, first_val=first_hour_etth1, test_first_year=2018,
+                                test_first_val=784, order_params = c(1,1,2), seasonal_order=c(0,1,1),
+                                seasonal_period=24) {
+  set.seed(101)
   train_prop = 0.8
   test_prop = 0.2
   train_size = (train_prop*length(input_ts))
   test_size = (test_prop*length(input_ts))
   res_lst = list()
-  for (pred_len in c(24, 48, 96, 288, 672)) {
+  for (pred_len in prediction_lengths) {
     avg_mse = 0
     avg_mae = 0
     for (trial in 1:10){
       print(paste("Prediction Length:", pred_len, "Trial:", trial))
       offset = sample(0:(test_size-pred_len), size=1)
-      # train = ts(input_ts[(1+offset):(train_size+offset)], start=c(2010, offset), freq=24*365)
-      train = ts(input_ts[1:train_size], start=c(2004, first_hour_aeph), freq=24*365)
+      train = ts(input_ts[1:train_size], start=c(first_year, first_val), freq=freq)
       
       test_start = train_size+1
-      # 2018, 784 for hourly etth
-      # test = ts(input_ts[test_start:length(input_ts)], start=c(2013,1770), freq=24*365)
-      test = ts(input_ts[test_start:length(input_ts)], start=c(2016,658), freq=24*365)
+      
+      test = ts(input_ts[test_start:length(input_ts)], start=c(test_first_year, test_first_val), freq=freq)
       if (include_trend_seasonality) {
         time_var_train = time(train)
         reg1_ = lm(train~time_var_train+I(time_var_train^3))
         seasonality_data = train-predict.lm(reg1_)
         
         f1 = 1
-        f2 = 12
-        d = 24*365
+        f2 = 3
+        f3 = 12
+        d = freq
         v1 = cos(2*base::pi*f1*((1+offset):(train_size+offset) )/d)
         v2 = sin(2*base::pi*f1*((1+offset):(train_size+offset) )/d)
         v3 = cos(2*base::pi*f2*((1+offset):(train_size+offset) )/d)
         v4 = sin(2*base::pi*f2*((1+offset):(train_size+offset) )/d)
-        seasonal_fit_ = lm(seasonality_data ~ 1 + v1 + v2 + v3 + v4)
+        v5 = cos(2*base::pi*f3*((1+offset):(train_size+offset) )/d)
+        v6 = sin(2*base::pi*f3*((1+offset):(train_size+offset) )/d)
+        seasonal_fit_ = lm(seasonality_data ~ 1 + v1 + v2 + v3 + v4 + v5 + v6)
     
         processed_train = seasonality_data-seasonal_fit_$fitted
-        evaluated_model1 = arima(processed_train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
-        # evaluated_model1 = arima(processed_train, order = c(0,1,1), seasonal=list(order=c(0,1,1), period=24))
-        # evaluated_model1 = arima(processed_train, order = c(0,0,1), seasonal=list(order=c(0,1,0), period=4*12))
-        # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
-        # evaluated_model1 = arima(processed_train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
+        evaluated_model1 = arima(processed_train, order = order_params, seasonal=list(order=seasonal_order, period=seasonal_period))
       } else {
-        evaluated_model1 = arima(train, order = c(1,1,2), seasonal=list(order=c(0,1,1), period=24))
-        # evaluated_model1 = arima(train, order = c(1,2,2), seasonal=list(order=c(0,1,1), period=24))
-        # evaluated_model1 = arima(train, order = c(0,0,1), seasonal=list(order=c(0,1,0), period=4*12))
-        # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24*2))
-        # evaluated_model1 = arima(train, order = c(1,0,1), seasonal=list(order=c(0,1,0), period=24))
+        evaluated_model1 = arima(train, order = order_params, seasonal=list(order=seasonal_order, period=seasonal_period))
       }
       pred_call = predict(evaluated_model1, n.ahead=pred_len)
       curr_pred = pred_call$pred
@@ -464,12 +632,14 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, include_trend_seasonality=F) 
         v2 = sin(2*base::pi*f1*((test_start+offset):(test_start+offset+pred_len-1))/d)
         v3 = cos(2*base::pi*f2*((test_start+offset):(test_start+offset+pred_len-1))/d)
         v4 = sin(2*base::pi*f2*((test_start+offset):(test_start+offset+pred_len-1))/d)
+        v5 = cos(2*base::pi*f3*((test_start+offset):(test_start+offset+pred_len-1))/d)
+        v6 = sin(2*base::pi*f3*((test_start+offset):(test_start+offset+pred_len-1))/d)
         seasonal_preds = coef(seasonal_fit_)[[1]]+coef(seasonal_fit_)[[2]]*v1+
                          coef(seasonal_fit_)[[3]]*v2+coef(seasonal_fit_)[[4]]*v3+
-                         coef(seasonal_fit_)[[5]]*v4
+                         coef(seasonal_fit_)[[5]]*v4+coef(seasonal_fit_)[[6]]*v5+
+                         coef(seasonal_fit_)[[7]]*v6
         curr_pred = curr_pred + reg1_preds+seasonal_preds
       }
-      curr_se = pred_call$se
       mse = mean( (test[(1+offset):(pred_len+offset)]-curr_pred)^2)
       mae = mean( abs(test[(1+offset):(pred_len+offset)]-curr_pred))
       avg_mse = avg_mse + mse
@@ -481,11 +651,80 @@ get_evaluation_on_ts = function(input_ts=etth1.ts, include_trend_seasonality=F) 
   return(res_lst)
 }
 
-# get_evaluation_on_ts(etth2.ts,include_trend_seasonality=T)
-get_evaluation_on_ts(etth1.ts,include_trend_seasonality=F)
-# get_evaluation_on_ts(ettm1.ts,include_trend_seasonality=T)
-# get_evaluation_on_ts(weather.ts,include_trend_seasonality=F)
-# get_evaluation_on_ts(aeph.ts,include_trend_seasonality=F)
+get_evaluation_on_ts2(etth2.ts,include_trend_seasonality=T,
+                     order_params = c(2,1,1), 
+                     seasonal_order=c(0,1,1),
+                     seasonal_period=24)
+get_evaluation_on_ts2(etth1.ts,include_trend_seasonality=T,
+                     order_params = c(2,1,1), 
+                     seasonal_order=c(0,1,1),
+                     seasonal_period=24)
+get_evaluation_on_ts2(ettm1.ts,freq=24*365*4, 
+                     prediction_lengths=c(24,48, 96, 288, 672),
+                     first_year=2016, first_val=first_hour_etth1,
+                     test_first_year=2017,
+                     test_first_val=25072,
+                     order_params = c(0,0,2),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(4*12))
+weather_test1 = get_evaluation_on_ts2(weather.ts,include_trend_seasonality=F,
+                     freq=24*365, 
+                     prediction_lengths=c(24,48, 168, 336, 720),
+                     first_year=2010, first_val=0,
+                     test_first_year=2014,
+                     test_first_val=25,
+                     order_params = c(1,0,1),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(24))
+aeph_test1 = get_evaluation_on_ts2(aeph.ts,include_trend_seasonality=T, freq=24*365,
+                     prediction_length=c(24, 48, 96, 288, 672),
+                     first_year=2004, first_val=first_hour_aeph,
+                     test_first_year=2016, 
+                     test_first_val=658,
+                     order_params = c(0,0,1),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(24*2))
+
+aeph_test2 = get_evaluation_on_ts2(aeph.ts,include_trend_seasonality=F, freq=24*365,
+                     prediction_length=c(24, 48, 96, 288, 672),
+                     first_year=2004, first_val=first_hour_aeph,
+                     test_first_year=2016, 
+                     test_first_val=658,
+                     order_params = c(0,0,1),
+                                seasonal_order=c(0,1,1),
+                                seasonal_period=c(24*2))
+
+
+# $mse_24
+# [1] 1.006021
+# 
+# $mae_24
+# [1] 0.8506603
+# 
+# $mse_48
+# [1] 1.448223
+# 
+# $mae_48
+# [1] 0.8933712
+# 
+# $mse_96
+# [1] 1.34877
+# 
+# $mae_96
+# [1] 0.9128821
+# 
+# $mse_288
+# [1] 1.48443
+# 
+# $mae_288
+# [1] 0.9567673
+# 
+# $mse_672
+# [1] 0.9993955
+# 
+# $mae_672
+# [1] 0.7968718
+
 
 ```
 
